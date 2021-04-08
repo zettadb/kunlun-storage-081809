@@ -1,0 +1,77 @@
+--source include/have_64bit.inc
+call mtr.add_suppression("\\[InnoDB\\] Tablespace id 4 in file t1\.ibd is encrypted but keyring or used key_id 7 is not available\. Can't continue reading table\. Please provide the correct keyring\.");
+
+SET GLOBAL innodb_encryption_threads=4;
+
+CREATE TABLE t1(a int not null primary key, b varchar(128)) engine=innodb ENCRYPTION='KEYRING' ENCRYPTION_KEY_ID=7;
+CREATE TABLE t2(a int not null primary key, b varchar(128)) engine=innodb ENCRYPTION='KEYRING' ENCRYPTION_KEY_ID=6;
+CREATE TABLE t3(a int not null primary key, b varchar(128)) engine=innodb ENCRYPTION='N';
+
+let $rows = 500;
+while($rows)
+{
+  eval insert into t1 values ($rows, 'thisissecretmessage');
+  dec $rows;
+}
+
+INSERT INTO t2 SELECT * FROM t1;
+INSERT INTO t3 SELECT * FROM t1;
+
+# Key id 7 does not exist in keys3.txt - thus we should receive error that the tablepsace cannot be opened
+
+--echo
+--echo # Restart server with keys3.txt
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+--let $restart_parameters=restart:--keyring-file-data=$MYSQLTEST_VARDIR/std_data/keys3.txt
+--source include/restart_mysqld.inc
+
+set global innodb_encryption_rotate_key_age = 1;
+use test;
+CREATE TABLE t4(a int not null primary key, b varchar(128)) engine=innodb ENCRYPTION='KEYRING' ENCRYPTION_KEY_ID=6;
+SELECT SLEEP(5);
+SELECT COUNT(1) FROM t3;
+SELECT COUNT(1) FROM t2;
+--error 1296
+SELECT COUNT(1) FROM t2,t1 where t2.a = t1.a;
+
+--let $expected_error_message=Got error 501 Table encrypted but decryption key was not found. Is correct keyring loaded? from InnoDB
+--source check_error_in_warnings.inc
+
+--error 1296
+SELECT COUNT(1) FROM t1 where b = 'ab';
+
+--let $expected_error_message=Got error 501 Table encrypted but decryption key was not found. Is correct keyring loaded? from InnoDB
+--source check_error_in_warnings.inc
+
+--error 1296
+SELECT COUNT(1) FROM t1;
+
+--let $expected_error_message=Got error 501 Table encrypted but decryption key was not found. Is correct keyring loaded? from InnoDB
+--source check_error_in_warnings.inc
+
+--echo
+--echo # Start server with keys2.txt
+--replace_result $MYSQLTEST_VARDIR MYSQLTEST_VARDIR
+--let $restart_parameters=restart:--keyring-file-data=$MYSQLTEST_VARDIR/std_data/keys2.txt
+--source include/restart_mysqld.inc
+
+SELECT COUNT(1) FROM t1;
+SELECT COUNT(1) FROM t2;
+SELECT COUNT(1) FROM t3;
+SELECT COUNT(1) FROM t4;
+
+# cleanup
+
+DROP TABLE t1, t2, t3, t4;
+
+# Decrypt all tables
+SET GLOBAL default_table_encryption = ONLINE_FROM_KEYRING_TO_UNENCRYPTED;
+SET GLOBAL innodb_encryption_threads=4;
+
+--echo # Wait max 10 min for encryption threads to decrypt all tables
+--let $wait_timeout= 600
+--let $wait_condition=SELECT COUNT(*) = 0 FROM INFORMATION_SCHEMA.INNODB_TABLESPACES_ENCRYPTION WHERE MIN_KEY_VERSION <> 0
+--source include/wait_condition.inc
+
+SET GLOBAL default_table_encryption = ONLINE_TO_KEYRING;
+SET GLOBAL innodb_encryption_threads=0;

@@ -1,0 +1,14 @@
+# Target labels
+ build_lzma
+# Source files and their labels
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/CMakeFiles/build_lzma
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/CMakeFiles/build_lzma.rule
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/CMakeFiles/build_lzma-complete.rule
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-install.rule
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-mkdir.rule
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-download.rule
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-update.rule
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-patch.rule
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-configure.rule
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-build.rule
+/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-reclone_src.rule

@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/CMakeFiles/build_lzma"
+		},
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/CMakeFiles/build_lzma.rule"
+		},
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/CMakeFiles/build_lzma-complete.rule"
+		},
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-install.rule"
+		},
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-mkdir.rule"
+		},
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-download.rule"
+		},
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-update.rule"
+		},
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-patch.rule"
+		},
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-configure.rule"
+		},
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-build.rule"
+		},
+		{
+			"file" : "/mnt/workspace/percona-server-8.0-source-tarballs/test/percona-server/storage/tokudb/PerconaFT/xz/src/build_lzma-stamp/build_lzma-reclone_src.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"build_lzma"
+		],
+		"name" : "build_lzma"
+	}
+}
