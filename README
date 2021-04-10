@@ -1,3 +1,10 @@
+Kunlun-storage originated from percona-mysql-8.0.18-9, and it contains fixes to all known XA bugs in mysql-8.0.18-9. Without such fixes, Kunlun DDC will not be crash safe and may lose committed transactions or harmed by other serious data consistency errors, in the event of various hardware/software/network failures.
+
+Kunlun-storage also contains features required by the computing node program of Kunlun distributed DBMS, and thus Kunlun Distributed Database Cluster(DDC) requires the use of Kunlun-storage as meta data cluster and storage shards.
+
+To install Kunlun-storage database instances, see INSTALL.Kunlun for instructions.
+
+
 Percona Server 8.0
 ------------------
 
