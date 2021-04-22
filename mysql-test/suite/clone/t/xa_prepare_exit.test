@@ -1,0 +1,64 @@
+--let $rpl_gtid_mode= ON_PERMISSIVE
+--let $rpl_set_enforce_gtid_consistency= 1
+--source include/rpl_set_gtid_mode.inc
+create table t1(a int);
+connect (con0,localhost,root,,);
+xa start 'a1';
+insert into t1 values(1);
+xa end 'a1';
+xa prepare 'a1';
+connection default;
+disconnect con0;
+xa recover;
+
+connect (con1,localhost,root,,);
+# turn off session wide binlogging
+set gtid_next='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:1';
+set session sql_log_bin=off;
+xa start 'a2';
+insert into t1 values(2);
+xa end 'a2';
+xa prepare 'a2';
+--error 1399
+select*from t1;
+connection default;
+disconnect con1;
+xa recover;
+--echo # a2 should not have been committed
+--echo # this is a bug of mysql, the 'a2' txn was committed unexpectedly in gtid_end_transaction() which should only store the gtid into mysql.gtid_executed.
+select*from t1;
+
+connect (con2,localhost,root,,);
+# turn off session wide binlogging
+set session sql_log_bin=off;
+xa start 'a3';
+insert into t1 values(3);
+xa end 'a3';
+xa prepare 'a3';
+connection default;
+disconnect con2;
+xa recover;
+
+connect (con3,localhost,root,,);
+set gtid_next='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:2';
+xa start 'a4';
+insert into t1 values(4);
+xa end 'a4';
+xa prepare 'a4';
+connection default;
+disconnect con3;
+xa recover;
+
+--let restart_parameters="restart: --skip-log-bin"
+--source include/restart_mysqld.inc
+#expect a1 and a2
+xa recover;
+select*from mysql.gtid_executed;
+xa commit 'a1';
+select*from t1;
+
+--let restart_parameters="restart: "
+--source include/restart_mysqld.inc
+#expect a1 and a2
+xa recover;
+select*from mysql.gtid_executed;

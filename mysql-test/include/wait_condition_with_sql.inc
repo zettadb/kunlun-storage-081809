@@ -26,7 +26,7 @@
 #    innodb_undo.undo_tablespace_debug
 #
 
-let $wait_counter= 30;
+let $wait_counter= 300;
 if ($wait_timeout)
 {
   let $wait_counter= `SELECT $wait_timeout`;

@@ -47,6 +47,7 @@
 #include "mysql/psi/mysql_mutex.h"
 #include "mysql/service_mysql_alloc.h"
 #include "prealloced_array.h"
+#include "sql/log_event.h"
 #include "sql/rpl_gtid.h"
 #include "sql/sql_const.h"
 #include "sql/thr_malloc.h"
@@ -1337,7 +1338,15 @@ enum_return_status Gtid_set::add_gtid_encoding(const uchar *encoded,
   }
   DBUG_ASSERT(pos <= length);
   if (actual_length == nullptr) {
-    if (pos != length) {
+    /*
+     * dzw:
+     * Allow extra header and payload starting with the magic word.
+     * This format is not supported by mysql official version, so official
+     * mysqld and helper tools like mysqlbinlog won't be able to work with
+     * progs or binlog data of our version.
+     * */
+    if (pos != length && uint2korr(encoded + pos) !=
+        Previous_gtids_log_event::Extra_header::MAGIC) {
       DBUG_PRINT("error",
                  ("(pos=%lu) != (length=%lu)", (ulong)pos, (ulong)length));
       goto report_error;

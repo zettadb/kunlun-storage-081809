@@ -957,6 +957,7 @@ static bool socket_listener_active = false;
 static int pipe_write_fd = -1;
 static bool opt_daemonize = 0;
 #endif
+int g_did_binlog_recovery = 0;
 bool opt_debugging = false;
 static bool opt_external_locking = 0, opt_console = 0;
 static bool opt_short_log_format = 0;
@@ -1917,7 +1918,7 @@ class Set_kill_conn : public Do_THD_Impl {
       killing_thd->kill_immunizer->save_killed_state(THD::KILL_CONNECTION);
     } else {
       killing_thd->killed = THD::KILL_CONNECTION;
-
+      killing_thd->print_aborted_warning(0, "Connection killed in Set_kill_conn");
       MYSQL_CALLBACK(killing_thd->scheduler, post_kill_notification,
                      (killing_thd));
     }
@@ -6954,7 +6955,10 @@ int mysqld_main(int argc, char **argv)
                    (gtids_in_binlog - purged_gtids_from_binlog)
                  = gtids_only_in_table + purged_gtids_from_binlog;
     */
-    DBUG_ASSERT(lost_gtids->is_empty());
+    if (!lost_gtids->is_empty()) {
+      lost_gtids->dbug_print("lost_gtids");
+    }
+
     if (lost_gtids->add_gtid_set(gtids_only_in_table) != RETURN_STATUS_OK ||
         lost_gtids->add_gtid_set(&purged_gtids_from_binlog) !=
             RETURN_STATUS_OK) {
@@ -6976,8 +6980,12 @@ int mysqld_main(int argc, char **argv)
       log. This requires some investigation.
 
       /Alfranio
+
+      Also the XA PREPARED TXNIDS are stored to the prev-gtids-list event.
     */
-    Previous_gtids_log_event prev_gtids_ev(&gtids_in_binlog);
+    std::string xa_prepared_query;
+    prepared_xa_txnids.serialize(xa_prepared_query);
+    Previous_gtids_log_event prev_gtids_ev(&gtids_in_binlog, &xa_prepared_query);
 
     global_sid_lock->unlock();
 
@@ -10287,7 +10295,7 @@ static int get_options(int *argc_ptr, char ***argv_ptr) {
 
 static void set_server_version(void) {
   char *end MY_ATTRIBUTE((unused)) = strxmov(
-      server_version, MYSQL_SERVER_VERSION, MYSQL_SERVER_SUFFIX_STR, NullS);
+      server_version, MYSQL_SERVER_VERSION, "-kunlun-storage", MYSQL_SERVER_SUFFIX_STR, NullS);
 #ifndef DBUG_OFF
   if (!strstr(MYSQL_SERVER_SUFFIX_STR, "-debug"))
     end = my_stpcpy(end, "-debug");

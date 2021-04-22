@@ -437,7 +437,8 @@ bool SELECT_LEX::prepare(THD *thd) {
     apply local transformations to this query block and all underlying query
     blocks.
   */
-  if ((outer_select() == NULL ||
+  if (((outer_select() == NULL && parent_lex->sql_command != SQLCOM_UPDATE &&
+        parent_lex->sql_command != SQLCOM_DELETE) ||
        ((parent_lex->sql_command == SQLCOM_SET_OPTION ||
          parent_lex->sql_command == SQLCOM_END) &&
         outer_select()->outer_select() == NULL)) &&
@@ -476,6 +477,70 @@ bool SELECT_LEX::prepare(THD *thd) {
   DBUG_ASSERT(!thd->is_error());
   return false;
 }
+
+bool SELECT_LEX::setup_wild_in_returning(THD *thd)
+{
+  DBUG_ENTER("SELECT_LEX::setup_wild_in_returning");
+
+  DBUG_ASSERT(with_wild);
+
+  // PS/SP uses arena so that changes are made permanently.
+  Prepared_stmt_arena_holder ps_arena_holder(thd);
+
+  Item *item;
+  List_iterator<Item> it(returning_list);
+
+  while (with_wild && (item= it++))
+  {
+    Item_field *item_field;
+    if (item->type() == Item::FIELD_ITEM &&
+        (item_field= (Item_field *) item) &&
+        item_field->field_name &&
+        item_field->field_name[0] == '*' &&
+        !item_field->field)
+    {
+      const uint elem= fields_list.elements;
+      const bool any_privileges= item_field->any_privileges;
+      Item_subselect *subsel= master_unit()->item;
+
+      /*
+        In case of EXISTS(SELECT * ... HAVING ...), don't use this
+        transformation. The columns in HAVING will need to resolve to the
+        select list. Replacing * with 1 effectively eliminates this
+        possibility.
+      */
+      if (subsel && subsel->substype() == Item_subselect::EXISTS_SUBS &&
+          !having_cond())
+      {
+        /*
+          It is EXISTS(SELECT * ...) and we can replace * by any constant.
+
+          Item_int do not need fix_fields() because it is basic constant.
+        */
+        it.replace(new Item_int(NAME_STRING("Not_used"), (longlong) 1,
+                                MY_INT64_NUM_DECIMAL_DIGITS));
+      }
+      else
+      {
+        if (insert_fields(thd, item_field->context,
+                          item_field->db_name, item_field->table_name,
+                          &it, any_privileges))
+          DBUG_RETURN(true);
+      }
+      /*
+        all_fields is a list that has the fields list as a tail.
+        Because of this we have to update the element count also for this
+        list after expanding the '*' entry.
+      */
+      all_fields.elements+= fields_list.elements - elem;
+
+      with_wild--;
+    }
+  }
+
+  DBUG_RETURN(false);
+}
+
 
 /**
   Check whether the given table function or lateral derived table depends on a

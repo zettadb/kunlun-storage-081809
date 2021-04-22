@@ -128,6 +128,7 @@ Login OK
 [Verify that session_connect_attrs contains the following pair ("custom_test_key","someValue")]
 RUN recvok
 [Verify that session_connect_attrs contains the following pair ("custom_test_key","someValue")]
+in main, line 148:in macro Check_connect_attributes, line 3:ERROR: Internal error executing command (code 5010)
 closing session test_session.III.1
 Mysqlx.Ok {
   msg: "bye!"

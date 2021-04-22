@@ -1,0 +1,112 @@
+# check for a normal txn commit or an XA trx committed one phase, if mysqld crashes before the engine
+# commit phase is performed, the trx can be aborted at mysqld restart with binlog
+# disabled. this is crucial for clone to work correctly.
+# also, for a XA trx prepared via XA PREPARE if mysqld crashes after binlog
+# synced, the trx can be kept prepared at mysqld restart with binlog
+# disabled.
+
+#1. xa cop
+--let rpl_gtid_mode= ON
+--let rpl_set_enforce_gtid_consistency= 1
+--source include/rpl_set_gtid_mode.inc
+
+create table t1(a int);
+xa start 'a1';
+insert into t1 values(1);
+xa end 'a1';
+
+--let debug_point=crash_before_engine_commit
+--source include/add_debug_point.inc
+--source include/expect_crash.inc
+--error 2013
+xa commit 'a1' one phase;
+
+#start mysqld with no binlog, the prepared txn should be aborted in ha_recover(0).
+--let restart_parameters=restart: --skip-log-bin
+--source include/start_mysqld.inc
+
+--echo #expect no txn
+xa recover;
+
+--let restart_parameters=restart
+--source include/restart_mysqld.inc
+
+#2. xa prepare 
+--let rpl_gtid_mode= ON
+--let rpl_set_enforce_gtid_consistency= 1
+--source include/rpl_set_gtid_mode.inc
+
+xa start 'a2';
+insert into t1 values(2);
+xa end 'a2';
+
+--let debug_point=crash_before_engine_commit
+--source include/add_debug_point.inc
+--source include/expect_crash.inc
+--error 2013
+xa prepare 'a2';
+
+#start mysqld with no binlog and no gtid, the prepared txn should be left as is in ha_recover(0).
+--let restart_parameters=restart: --skip-log-bin
+--source include/start_mysqld.inc
+
+--echo #expect 1 txn
+xa recover;
+xa commit 'a2';
+
+#3 normal txn
+--let restart_parameters=restart
+--source include/restart_mysqld.inc
+
+--let rpl_gtid_mode= ON
+--let rpl_set_enforce_gtid_consistency= 1
+--source include/rpl_set_gtid_mode.inc
+
+select*from t1;
+begin;
+insert into t1 values(3);
+--let debug_point=crash_before_engine_commit
+--source include/add_debug_point.inc
+--source include/expect_crash.inc
+--error 2013
+commit;
+
+
+#start mysqld with no binlog, the prepared txn should be aborted in ha_recover(0).
+--let restart_parameters=restart: --skip-log-bin
+--source include/start_mysqld.inc
+
+--echo #don't expect 3
+select*from t1;
+
+--let restart_parameters=restart
+--source include/restart_mysqld.inc
+
+#4. autocommit txn
+--let rpl_gtid_mode= ON
+--let rpl_set_enforce_gtid_consistency= 1
+--source include/rpl_set_gtid_mode.inc
+
+select*from t1;
+
+--let debug_point=crash_before_engine_commit
+--source include/add_debug_point.inc
+--source include/expect_crash.inc
+set session autocommit=on;
+--error 2013
+insert into t1 values(4);
+
+
+#start mysqld with no binlog, the prepared txn should be aborted in ha_recover(0).
+--let restart_parameters=restart: --skip-log-bin
+--source include/start_mysqld.inc
+
+--echo #don't expect 4
+select*from t1;
+
+--let restart_parameters=restart
+--source include/restart_mysqld.inc
+select*from t1;
+
+drop table t1;
+

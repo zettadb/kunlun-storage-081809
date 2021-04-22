@@ -1,0 +1,163 @@
+CREATE TABLE t1(c1 INT) ENGINE= InnoDB;
+# Crash in XA PREPARE right after flushing InnoDB redo log
+XA START '1';
+INSERT INTO t1 VALUES(1);
+XA END '1';
+XA PREPARE '1';
+flush logs;
+XA START '11';
+INSERT INTO t1 VALUES(1);
+XA END '11';
+XA PREPARE '11';
+flush logs;
+SET SESSION DEBUG="+d,crash_after_flush_engine_log";
+XA START '111';
+INSERT INTO t1 VALUES(1);
+XA END '111';
+XA PREPARE '111';
+ERROR HY000: Lost connection to MySQL server during query
+# Restart the master server
+show binary logs;
+Log_name	File_size	Encrypted
+binlog.000001	792	No
+binlog.000002	600	No
+binlog.000003	172	No
+binlog.000004	172	No
+#expect XA_PREPARED_LIST '1','11'.
+show binlog events in 'binlog.000004';
+Log_name	Pos	Event_type	Server_id	End_log_pos	Info
+binlog.000004	4	Format_desc	1	124	Server ver: 8.0.18-9-debug, Binlog ver: 4
+binlog.000004	124	Previous_gtids	1	172		XA-PREPARED: 11|1
+#
+# XA txn '111' should be aborted during binlog recovery, XA txn '1' and '11' should be left prepared.
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	1	0	1
+1	2	0	11
+XA COMMIT '11';
+include/assert.inc [Table t1 must contain 1 row 1]
+SET SESSION DEBUG="+d,crash_after_flush_binlog";
+XA COMMIT '1';
+ERROR HY000: Lost connection to MySQL server during query
+# Restart the master server
+show binary logs;
+Log_name	File_size	Encrypted
+binlog.000001	792	No
+binlog.000002	600	No
+binlog.000003	172	No
+binlog.000004	510	No
+binlog.000005	163	No
+#expect empty XA_PREPARED_LIST.
+show binlog events in 'binlog.000005';
+Log_name	Pos	Event_type	Server_id	End_log_pos	Info
+binlog.000005	4	Format_desc	1	124	Server ver: 8.0.18-9-debug, Binlog ver: 4
+binlog.000005	124	Previous_gtids	1	163	
+#
+# XA txn '1' should be committed during binlog recovery.
+# No prepared XA txn expected
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [Table t1 must contain 2 rows of 1]
+select*from t1;
+c1
+1
+1
+# Crash in XA PREPARE right after flushing binlog
+XA START '5';
+INSERT INTO t1 VALUES(5);
+XA END '5';
+XA PREPARE '5';
+flush logs;
+XA START '55';
+INSERT INTO t1 VALUES(5);
+XA END '55';
+XA PREPARE '55';
+flush logs;
+SET SESSION DEBUG="+d,crash_after_flush_binlog";
+XA START '555';
+INSERT INTO t1 VALUES(5);
+XA END '555';
+XA PREPARE '555';
+ERROR HY000: Lost connection to MySQL server during query
+# Restart the master server
+show binary logs;
+Log_name	File_size	Encrypted
+binlog.000001	792	No
+binlog.000002	600	No
+binlog.000003	172	No
+binlog.000004	510	No
+binlog.000005	589	No
+binlog.000006	600	No
+binlog.000007	564	No
+binlog.000008	176	No
+#expect XA_PREPARED_LIST '5','55', '555.
+show binlog events in 'binlog.000008';
+Log_name	Pos	Event_type	Server_id	End_log_pos	Info
+binlog.000008	4	Format_desc	1	124	Server ver: 8.0.18-9-debug, Binlog ver: 4
+binlog.000008	124	Previous_gtids	1	176		XA-PREPARED: 555|5|55
+#
+# XA txn '5','55','555' should be left prepared during binlog recovery.
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	1	0	5
+1	2	0	55
+1	3	0	555
+include/assert.inc [Table t1 must not contain 5]
+XA COMMIT '5';
+include/assert.inc [Table t1 must contain 1 row of 5]
+SET SESSION DEBUG="+d,crash_after_flush_engine_log";
+XA COMMIT '55';
+ERROR HY000: Lost connection to MySQL server during query
+# Restart the master server
+show binary logs;
+Log_name	File_size	Encrypted
+binlog.000001	792	No
+binlog.000002	600	No
+binlog.000003	172	No
+binlog.000004	510	No
+binlog.000005	589	No
+binlog.000006	600	No
+binlog.000007	564	No
+binlog.000008	344	No
+binlog.000009	174	No
+#expect XA_PREPARED_LIST '55', '555.
+show binlog events in 'binlog.000009';
+Log_name	Pos	Event_type	Server_id	End_log_pos	Info
+binlog.000009	4	Format_desc	1	124	Server ver: 8.0.18-9-debug, Binlog ver: 4
+binlog.000009	124	Previous_gtids	1	174		XA-PREPARED: 555|55
+#
+# XA txn '55' and '555' should be left prepared during binlog recovery.
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	2	0	55
+1	3	0	555
+include/assert.inc [Table t1 must contain 1 row of 5]
+XA COMMIT '55';
+include/assert.inc [Table t1 must contain 2 rows of 5]
+SET SESSION DEBUG="+d,crash_after_flush_binlog";
+XA COMMIT '555';
+ERROR HY000: Lost connection to MySQL server during query
+# Restart the master server
+show binary logs;
+Log_name	File_size	Encrypted
+binlog.000001	792	No
+binlog.000002	600	No
+binlog.000003	172	No
+binlog.000004	510	No
+binlog.000005	589	No
+binlog.000006	600	No
+binlog.000007	564	No
+binlog.000008	344	No
+binlog.000009	516	No
+binlog.000010	163	No
+#expect empty XA_PREPARED_LIST
+show binlog events in 'binlog.000010';
+Log_name	Pos	Event_type	Server_id	End_log_pos	Info
+binlog.000010	4	Format_desc	1	124	Server ver: 8.0.18-9-debug, Binlog ver: 4
+binlog.000010	124	Previous_gtids	1	163	
+#
+# expect no prepared XA txns
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [Table t1 must contain 3 rows of 5]
+DROP TABLE t1;

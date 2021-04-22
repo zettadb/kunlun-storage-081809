@@ -4788,9 +4788,9 @@ static int exec_relay_log_event(THD *thd, Relay_log_info *rli,
             */
       DBUG_EXECUTE_IF(
           "incomplete_group_in_relay_log",
-          if ((ev->get_type_code() == binary_log::XID_EVENT) ||
-              ((ev->get_type_code() == binary_log::QUERY_EVENT) &&
-               strcmp("COMMIT", ((Query_log_event *)ev)->query) == 0)) {
+          if (ev->get_type_code() == binary_log::XID_EVENT ||
+              ev->get_type_code() == binary_log::XA_PREPARE_LOG_EVENT ||
+              (ev->get_type_code() == binary_log::QUERY_EVENT && ev->ends_group())) {
             DBUG_ASSERT(thd->get_transaction()->cannot_safely_rollback(
                 Transaction_ctx::SESSION));
             rli->abort_slave = 1;
@@ -5415,6 +5415,13 @@ reading event"))
               mi->report(ERROR_LEVEL, ER_SERVER_OUT_OF_RESOURCES, "%s",
                          ER_THD(thd, ER_SERVER_OUT_OF_RESOURCES));
               goto err;
+            default:
+#ifdef DBUG_OFF
+              /* in debug build we don't want to produce warning for mtr tests. */
+              sql_print_error("Slave IO thread failed to read event, with unknown and ignored error: %u. Reconnecting...",
+                  mysql_error_number);
+#endif
+              break;
           }
           if (try_to_reconnect(thd, mysql, mi, &retry_count, suppress_warnings,
                                reconnect_messages[SLAVE_RECON_ACT_EVENT]))
@@ -6150,8 +6157,17 @@ bool mts_recovery_groups(Relay_log_info *rli) {
               }
             }
             not_reached_commit = false;
-          } else
+          } else {
             DBUG_ASSERT(ret < 0);
+            if (ret > 0)
+            {
+              delete ev;
+              ev= NULL;
+              sql_print_error("mts_recovery_group: ev_coord(%s, %u) > w_last(%s, %u) for worker %lu",
+                  ev_coord.file_name, ev_coord.pos, w_last.file_name, w_last.pos, w->id);
+              goto err;            
+            }
+          }
         }
         delete ev;
         ev = nullptr;

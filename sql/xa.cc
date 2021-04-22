@@ -27,6 +27,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <functional>
 
 #include "m_ctype.h"
 #include "m_string.h"
@@ -78,9 +79,11 @@
 const char *XID_STATE::xa_state_names[] = {"NON-EXISTING", "ACTIVE", "IDLE",
                                            "PREPARED", "ROLLBACK ONLY"};
 
-/* for recover() handlerton call */
-static const int MIN_XID_LIST_SIZE = 128;
-static const int MAX_XID_LIST_SIZE = 1024 * 128;
+const char *strnchr(const char *str, char c, size_t n);
+Prepared_xa_txnids prepared_xa_txnids;
+extern int g_did_binlog_recovery;
+extern int print_extra_info;
+extern int ddc_mode;
 
 struct transaction_free_hash {
   void operator()(Transaction_ctx *) const;
@@ -100,6 +103,8 @@ static std::shared_ptr<Transaction_ctx> transaction_cache_search(XID *xid);
 static bool transaction_cache_insert(XID *xid, Transaction_ctx *transaction);
 static bool transaction_cache_insert_recovery(XID *xid);
 
+static int INTERNAL_MYSQL_SYSTEM_XID = -1;
+
 my_xid xid_t::get_my_xid() const {
   static_assert(XIDDATASIZE == MYSQL_XIDDATASIZE,
                 "Our #define needs to match the one in plugin.h.");
@@ -116,12 +121,34 @@ my_xid xid_t::get_my_xid() const {
 
 void xid_t::set(my_xid xid) {
   formatID = 1;
+  /*
+    trx_is_mysql_xa() assumes xid is 0 if it's external XA txn and non-zero
+	if internal. And queries executed internally in mysql at start of mysqld
+	before any query is executed, thd->query_id is 0, so assign
+	INTERNAL_MYSQL_SYSTEM_XID in this case.
+  */
+  if (xid == 0) xid = INTERNAL_MYSQL_SYSTEM_XID;
+
   memcpy(data, MYSQL_XID_PREFIX, MYSQL_XID_PREFIX_LEN);
   memcpy(data + MYSQL_XID_PREFIX_LEN, &server_id, sizeof(server_id));
   memcpy(data + MYSQL_XID_OFFSET, &xid, sizeof(xid));
   gtrid_length = MYSQL_XID_GTRID_LEN;
   bqual_length = 0;
 }
+
+const char *XID_STATE ::get_xa_xid() const
+{
+  if (m_xid_str[0] == '\0')
+  {
+    my_xid xid = m_xid.get_my_xid();
+    if (xid == 0)
+      m_xid.serialize(m_xid_str);
+    else
+      snprintf(m_xid_str, sizeof(m_xid_str), "%llu", xid);
+  }
+  return m_xid_str;
+}
+
 
 static bool xacommit_handlerton(THD *, plugin_ref plugin, void *arg) {
   handlerton *hton = plugin_data<handlerton *>(plugin);
@@ -239,13 +266,111 @@ MEM_ROOT *Recovered_xa_transactions::get_allocated_memroot() {
   return &m_mem_root;
 }
 
+void Recovered_xa_transactions::clear()
+{
+  m_prepared_xa_trans.clear();
+}
+
 struct xarecover_st {
-  int len, found_foreign_xids, found_my_xids;
-  XA_recover_txn *list;
+  typedef std::set<std::string> xa_prepared_set_t;
+  xarecover_st(XA_recover_txn_list *txnlist,
+      const memroot_unordered_set<my_xid> *clist,
+      xa_prepared_set_t *xap_engine,
+      const xa_prepared_set_t *xap, const xa_prepared_set_t *cop,
+      const xa_prepared_set_t *committed, const xa_prepared_set_t *aborted) :
+    txn_list(txnlist), commit_list(clist),
+    binlog_xa_prepared_engine(xap_engine), binlog_xa_prepared(xap),
+    binlog_xa_cop(cop), binlog_xa_committed(committed),
+    binlog_xa_aborted(aborted)
+  {
+    DBUG_ASSERT((commit_list && binlog_xa_prepared_engine &&
+                 binlog_xa_prepared && binlog_xa_cop && binlog_xa_committed &&
+                 binlog_xa_aborted) ||
+                (!commit_list && !binlog_xa_prepared_engine &&
+                 !binlog_xa_prepared && !binlog_xa_cop &&
+                 !binlog_xa_committed && !binlog_xa_aborted));
+
+    found_foreign_xids = 0;
+    found_my_xids = 0;
+    dry_run = false;
+    m_do_binlog_recovery = (commit_list != NULL);
+  }
+
+  bool do_binlog_recovery() const { return m_do_binlog_recovery; }
+  int found_foreign_xids, found_my_xids;
+  XA_recover_txn_list *txn_list; // prepared txn list returned by storage engine.
   const memroot_unordered_set<my_xid> *commit_list;
+  // prepared xa txn branches that are found from storage engines(e.g. innodb, etc)
+  // during recovery.
+  xa_prepared_set_t *binlog_xa_prepared_engine;
+  // prepared xa txn branches that are found from XA_PREPARED_LIST of
+  // PREV_GTIDS_LIST event of last binlog file, as well as last binlog file.
+  const xa_prepared_set_t *binlog_xa_prepared;
+  // stores XA txn ids from binlog which were commtted by XA COMMIT ... ONE PHASE
+  const xa_prepared_set_t *binlog_xa_cop;
+
+  // stores XA txn ids from binlog which were commtted by XA COMMIT
+  const xa_prepared_set_t *binlog_xa_committed;
+  // stores XA txn ids from binlog which were aborted by XA rollback.
+  const xa_prepared_set_t *binlog_xa_aborted;
   bool dry_run;
+  bool m_do_binlog_recovery;
 };
 
+
+static bool
+fetch_xa_prepared_handlerton(THD * /*unused*/, plugin_ref plugin, void *arg)
+{
+  handlerton *hton= plugin_data<handlerton*>(plugin);
+  XA_recover_txn_list *txn_list = (XA_recover_txn_list *)arg;
+  int got;
+
+  if (hton->state == SHOW_OPTION_YES && hton->recover &&
+      ((got= hton->recover(hton, txn_list,
+        Recovered_xa_transactions::instance().get_allocated_memroot())) > 0))
+  {
+    sql_print_information("Found %d prepared transaction(s) in %s",
+                          got, ha_resolve_storage_engine_name(hton));
+    XA_recover_txn_list::iterator itr = txn_list->begin();
+    for (int i= 0; i < got; i++, ++itr)
+    {
+      XA_recover_txn&target_xrt = *itr;
+      XID &target_xid = target_xrt.id;
+      my_xid x= target_xid.get_my_xid();
+
+      if (!x) // not "mine" - that is generated by external TM
+      {
+        std::string xid_data(target_xid.get_data(), target_xid.get_gtrid_length());
+        prepared_xa_txnids.add_id(xid_data);
+        if (Recovered_xa_transactions::instance().add_prepared_xa_transaction(&target_xrt))
+          return true;
+      }
+      else
+      {
+        sql_print_error("Error: found internal XA XID %llu. fetch_xa_prepared()"
+                        " should not be called if recovery should be done.", x);
+        return true;
+      }
+    }
+  }
+  return false;
+
+}
+
+
+int fetch_xa_prepared()
+{
+  XA_recover_txn_list txn_list;
+  DBUG_ENTER("fetch_xa_prepared");
+
+  if (total_ha_2pc <= (ulong)opt_bin_log)
+    DBUG_RETURN(0);
+
+  plugin_foreach(NULL, fetch_xa_prepared_handlerton,
+                 MYSQL_STORAGE_ENGINE_PLUGIN, &txn_list);
+  
+  DBUG_RETURN(0);
+}
 static bool xarecover_create_mdl_backup(XA_recover_txn &txn,
                                         MEM_ROOT *mem_root) {
   MDL_request_list mdl_requests;
@@ -309,79 +434,137 @@ static bool xarecover_handlerton(THD *, plugin_ref plugin, void *arg) {
   xarecover_st *info = (struct xarecover_st *)arg;
   int got;
 
-  if (hton->state == SHOW_OPTION_YES && hton->recover) {
-    while (
-        (got = hton->recover(
-             hton, info->list, info->len,
-             Recovered_xa_transactions::instance().get_allocated_memroot())) >
-        0) {
-      LogErr(INFORMATION_LEVEL, ER_XA_RECOVER_FOUND_TRX_IN_SE, got,
-             ha_resolve_storage_engine_name(hton));
-      for (int i = 0; i < got; i++) {
-        my_xid x = info->list[i].id.get_my_xid();
-        if (!x)  // not "mine" - that is generated by external TM
-        {
-#ifndef DBUG_OFF
-          char buf[XIDDATASIZE * 4 + 6];  // see xid_to_str
-          XID *xid = &info->list[i].id;
-          LogErr(INFORMATION_LEVEL, ER_XA_IGNORING_XID, xid->xid_to_str(buf));
-#endif
+  if (hton->state == SHOW_OPTION_YES && hton->recover &&
+      (got = hton->recover(hton, info->txn_list,
+       Recovered_xa_transactions::instance().get_allocated_memroot())) > 0) {
+    LogErr(INFORMATION_LEVEL, ER_XA_RECOVER_FOUND_TRX_IN_SE, got,
+           ha_resolve_storage_engine_name(hton));
 
-          if (Recovered_xa_transactions::instance().add_prepared_xa_transaction(
-                  &info->list[i])) {
-            return true;
-          }
+    XA_recover_txn_list::iterator itr = info->txn_list->begin();
+    for (int i = 0; i < got; i++, ++itr) {
+
+      XA_recover_txn&target_xrt = *itr;
+      XID &target_xid = target_xrt.id;
+      my_xid x = target_xid.get_my_xid();
+      bool commit_i= false;
+
+      if (!x)  // not "mine" - that is generated by external TM
+      {
+        if (info->dry_run)
+        {
           info->found_foreign_xids++;
           continue;
         }
-        if (info->dry_run) {
-          info->found_my_xids++;
-          continue;
+
+        std::string xid_data(target_xid.get_data(), target_xid.get_gtrid_length());
+
+        if (info->binlog_xa_cop &&
+            info->binlog_xa_cop->find(xid_data) != info->binlog_xa_cop->end())
+        {
+          /*
+            External XA txn branch which was committed by XA COMMIT ... ONE PHASE.
+            It's already in binlog so we will commit it in storage engine down below.
+          */
+          commit_i= true;
         }
-        // recovery mode
-        if (info->commit_list
-                ? info->commit_list->count(x) != 0
-                : tc_heuristic_recover == TC_HEURISTIC_RECOVER_COMMIT) {
-#ifndef DBUG_OFF
-          char buf[XIDDATASIZE * 4 + 6];  // see xid_to_str
-          XID *xid = &info->list[i].id;
-          LogErr(INFORMATION_LEVEL, ER_XA_COMMITTING_XID, xid->xid_to_str(buf));
-#endif
-          hton->commit_by_xid(hton, &info->list[i].id);
-        } else {
-#ifndef DBUG_OFF
-          char buf[XIDDATASIZE * 4 + 6];  // see xid_to_str
-          XID *xid = &info->list[i].id;
-          LogErr(INFORMATION_LEVEL, ER_XA_ROLLING_BACK_XID,
-                 xid->xid_to_str(buf));
-#endif
-          hton->rollback_by_xid(hton, &info->list[i].id);
+        else if (info->binlog_xa_prepared &&
+                 info->binlog_xa_prepared->find(xid_data) == info->binlog_xa_prepared->end())
+        {
+          /*
+            External XA txn which was prepared in engine but doesn't exist
+            in binlog, have to rollback it. It can be formed by XA PREPARE
+            or XA COMMIT ... ONE PHASE.
+          */
+          goto abort_i;
+        }
+        else
+        {
+          if (info->binlog_xa_committed &&
+              info->binlog_xa_committed->find(xid_data) != info->binlog_xa_committed->end())
+          {
+            commit_i= true;
+          }
+          else if (info->binlog_xa_aborted &&
+                   info->binlog_xa_aborted->find(xid_data) != info->binlog_xa_aborted->end())
+          {
+            goto abort_i;
+          }
+          else
+          {
+            if (target_xrt.one_phase_prepared) {
+              // this is only possible for 1st startup of cloned instance.
+              goto abort_i;
+            }
+
+            if (Recovered_xa_transactions::instance().add_prepared_xa_transaction(&target_xrt))
+              return true;
+
+            info->found_foreign_xids++;
+            if (info->binlog_xa_prepared_engine)
+              info->binlog_xa_prepared_engine->insert(xid_data);
+            continue;
+          }
         }
       }
-      if (got < info->len) break;
+
+      if (x && info->dry_run) {
+        info->found_my_xids++;
+        continue;
+      }
+      // recovery mode
+      if (commit_i ||
+          (info->do_binlog_recovery() ?
+           info->commit_list->find(x) != info->commit_list->end() :
+           tc_heuristic_recover == TC_HEURISTIC_RECOVER_COMMIT)) {
+#ifndef DBUG_OFF
+        char buf[XIDDATASIZE * 4 + 6];  // see xid_to_str
+        LogErr(INFORMATION_LEVEL, ER_XA_COMMITTING_XID, target_xid.xid_to_str(buf));
+#endif
+        hton->commit_by_xid(hton, &target_xid);
+      } else {
+abort_i:
+#ifndef DBUG_OFF
+        char buf[XIDDATASIZE * 4 + 6];  // see xid_to_str
+        LogErr(INFORMATION_LEVEL, ER_XA_ROLLING_BACK_XID,
+               target_xid.xid_to_str(buf));
+#endif
+        hton->rollback_by_xid(hton, &target_xid);
+        if (print_extra_info && info->do_binlog_recovery() == false)
+        {
+          char buf2[XID::ser_buf_size];
+          sql_print_warning("Aborting engine prepared transaction %s in normal recovery(not binlog recovery), which is only expected at 1st startup of a cloned instance.",
+              target_xid.serialize(buf2));
+        }
+      }
     }
   }
   return false;
 }
 
-int ha_recover(const memroot_unordered_set<my_xid> *commit_list) {
-  xarecover_st info;
+int ha_recover(const memroot_unordered_set<my_xid> *commit_list,
+               const xarecover_st::xa_prepared_set_t *xa_prepared,
+               const xarecover_st::xa_prepared_set_t* xa_cop,
+               const std::set<std::string> *xa_committed,
+               const std::set<std::string> *xa_aborted,
+               xarecover_st::xa_prepared_set_t *engine_prepared) {
+
+  XA_recover_txn_list txn_list;
+  xarecover_st info(&txn_list, commit_list, engine_prepared, xa_prepared,
+      xa_cop, xa_committed, xa_aborted);
+
   DBUG_TRACE;
-  info.found_foreign_xids = info.found_my_xids = 0;
-  info.commit_list = commit_list;
   info.dry_run =
-      (info.commit_list == 0 && tc_heuristic_recover == TC_HEURISTIC_NOT_USED);
-  info.list = NULL;
+      (info.do_binlog_recovery() == false && tc_heuristic_recover == TC_HEURISTIC_NOT_USED);
 
   /* commit_list and tc_heuristic_recover cannot be set both */
-  DBUG_ASSERT(info.commit_list == 0 ||
+  DBUG_ASSERT(info.do_binlog_recovery() == false ||
               tc_heuristic_recover == TC_HEURISTIC_NOT_USED);
   /* if either is set, total_ha_2pc must be set too */
   DBUG_ASSERT(info.dry_run || total_ha_2pc > (ulong)opt_bin_log);
 
   if (total_ha_2pc <= (ulong)opt_bin_log) return 0;
 
-  if (info.commit_list) LogErr(SYSTEM_LEVEL, ER_XA_STARTING_RECOVERY);
+  if (info.do_binlog_recovery()) LogErr(SYSTEM_LEVEL, ER_XA_STARTING_RECOVERY);
 
   if (total_ha_2pc > (ulong)opt_bin_log + 1) {
     if (tc_heuristic_recover == TC_HEURISTIC_RECOVER_ROLLBACK) {
@@ -398,31 +581,23 @@ int ha_recover(const memroot_unordered_set<my_xid> *commit_list) {
     info.dry_run = false;
   }
 
-  for (info.len = MAX_XID_LIST_SIZE;
-       info.list == 0 && info.len > MIN_XID_LIST_SIZE; info.len /= 2) {
-    info.list = new (std::nothrow) XA_recover_txn[info.len];
-  }
-  if (!info.list) {
-    LogErr(ERROR_LEVEL, ER_SERVER_OUTOFMEMORY,
-           static_cast<int>(info.len * sizeof(XID)));
-    return 1;
-  }
 
   if (plugin_foreach(nullptr, xarecover_handlerton, MYSQL_STORAGE_ENGINE_PLUGIN,
                      &info)) {
     return 1;
   }
 
-  delete[] info.list;
+  if (info.do_binlog_recovery())
+    g_did_binlog_recovery = 1;
 
   if (info.found_foreign_xids)
-    LogErr(WARNING_LEVEL, ER_XA_RECOVER_FOUND_XA_TRX, info.found_foreign_xids);
+    LogErr(INFORMATION_LEVEL, ER_XA_RECOVER_FOUND_XA_TRX, info.found_foreign_xids);
   if (info.dry_run && info.found_my_xids) {
     LogErr(ERROR_LEVEL, ER_XA_RECOVER_EXPLANATION, info.found_my_xids,
            opt_tc_log_file);
     return 1;
   }
-  if (info.commit_list) LogErr(SYSTEM_LEVEL, ER_XA_RECOVERY_DONE);
+  if (info.do_binlog_recovery()) LogErr(SYSTEM_LEVEL, ER_XA_RECOVERY_DONE);
   return 0;
 }
 
@@ -769,7 +944,16 @@ bool Sql_cmd_xa_commit::process_internal_xa_commit(THD *thd,
   return res;
 }
 
+inline static std::string get_xa_txnid(const xid_t *xid)
+{
+  // Note that the XID::data string doens't end with '\0'.
+  std::string id(xid->get_data(), xid->get_gtrid_length());
+  
+  return id;
+}
+
 bool Sql_cmd_xa_commit::execute(THD *thd) {
+  std::string xa_txnid(get_xa_txnid(m_xid));
   bool st = trans_xa_commit(thd);
 
   if (!st) {
@@ -779,7 +963,7 @@ bool Sql_cmd_xa_commit::execute(THD *thd) {
         isolation level and access mode to the session default.
     */
     trans_reset_one_shot_chistics(thd);
-
+    prepared_xa_txnids.del_id(xa_txnid);
     my_ok(thd);
   }
   return st;
@@ -955,6 +1139,7 @@ bool Sql_cmd_xa_rollback::process_internal_xa_rollback(THD *thd,
 }
 
 bool Sql_cmd_xa_rollback::execute(THD *thd) {
+  std::string xa_txnid(get_xa_txnid(m_xid));
   bool st = trans_xa_rollback(thd);
 
   if (!st) {
@@ -964,6 +1149,7 @@ bool Sql_cmd_xa_rollback::execute(THD *thd) {
       isolation level and access mode to the session default.
     */
     trans_reset_one_shot_chistics(thd);
+    prepared_xa_txnids.del_id(xa_txnid);
     my_ok(thd);
   }
 
@@ -998,6 +1184,8 @@ bool Sql_cmd_xa_start::trans_xa_start(THD *thd) {
     return not_equal;
   }
 
+  bool is_valid_xid = true;
+
   /* TODO: JOIN is not supported yet. */
   if (m_xa_opt != XA_NONE)
     my_error(ER_XAER_INVAL, MYF(0));
@@ -1005,18 +1193,23 @@ bool Sql_cmd_xa_start::trans_xa_start(THD *thd) {
     my_error(ER_XAER_RMFAIL, MYF(0), xid_state->state_name());
   else if (thd->locked_tables_mode || thd->in_active_multi_stmt_transaction())
     my_error(ER_XAER_OUTSIDE, MYF(0));
+  else if (!(is_valid_xid = (strnchr(m_xid->get_data(), '|',
+            m_xid->get_bqual_length() + m_xid->get_gtrid_length()) == NULL)))
+    // forbid XA txn id containing | because it's used in xa-prepared-ids of Prev_gtid_list to seperate txn ids.
+    my_error(ER_XAER_INVAL, MYF(0));
   else if (!trans_begin(thd)) {
     xid_state->start_normal_xa(m_xid);
     MYSQL_SET_TRANSACTION_XID(thd->m_transaction_psi,
                               (const void *)xid_state->get_xid(),
                               (int)xid_state->get_state());
+    xid_state->set_xa_type(XID_STATE::XA_EXTERNAL); // started by 'xa start'.
     if (transaction_cache_insert(m_xid, thd->get_transaction())) {
       xid_state->reset();
       trans_rollback(thd);
     }
   }
 
-  return thd->is_error() || !xid_state->has_state(XID_STATE::XA_ACTIVE);
+  return !is_valid_xid || thd->is_error() || !xid_state->has_state(XID_STATE::XA_ACTIVE);
 }
 
 bool Sql_cmd_xa_start::execute(THD *thd) {
@@ -1094,6 +1287,10 @@ bool Sql_cmd_xa_prepare::trans_xa_prepare(THD *thd) {
     my_error(ER_XA_REPLICATION_FILTERS,
              MYF(0));  // Empty XA transactions not allowed
   else {
+    if ((!thd->slave_thread || opt_log_slave_updates) && opt_bin_log &&
+        thd->variables.sql_log_bin)
+      thd->durability_property = HA_IGNORE_DURABILITY;
+
     /*
       Acquire metadata lock which will ensure that XA PREPARE is blocked
       by active FLUSH TABLES WITH READ LOCK (and vice versa PREPARE in
@@ -1139,6 +1336,9 @@ bool Sql_cmd_xa_prepare::trans_xa_prepare(THD *thd) {
 }
 
 bool Sql_cmd_xa_prepare::execute(THD *thd) {
+  std::string xa_txnid(get_xa_txnid(m_xid));
+  prepared_xa_txnids.add_id(xa_txnid);
+
   bool st = trans_xa_prepare(thd);
 
   if (!st) {
@@ -1187,7 +1387,8 @@ bool Sql_cmd_xa_recover::trans_xa_recover(THD *thd) {
   for (const auto &key_and_value : transaction_cache) {
     Transaction_ctx *transaction = key_and_value.second.get();
     XID_STATE *xs = transaction->xid_state();
-    if (xs->has_state(XID_STATE::XA_PREPARED)) {
+    if (xs->has_state(XID_STATE::XA_PREPARED) &&
+        (m_xid == NULL || xs->get_xid()->eq(m_xid))) {      
       protocol->start_row();
       xs->store_xid_info(protocol, m_print_xid_as_hex);
 
@@ -1455,7 +1656,7 @@ bool transaction_cache_insert(XID *xid, Transaction_ctx *transaction) {
   return res;
 }
 
-inline bool create_and_insert_new_transaction(XID *xid, bool is_binlogged_arg) {
+static bool create_and_insert_new_transaction(XID *xid, bool is_binlogged_arg) {
   Transaction_ctx *transaction = new (std::nothrow) Transaction_ctx();
   XID_STATE *xs;
 
@@ -1559,6 +1760,73 @@ static void attach_native_trx(THD *thd) {
      */
     thd->rpl_reattach_engine_ha_data();
   }
+}
+
+std::string &XID_STATE::to_string(std::string &str) const
+{
+  char buf[384];
+  int retlen = snprintf(buf, sizeof(buf),
+      "xid: %s, state: %s, type: %s, %s, %s, %u",get_xa_xid(),
+           state_name(), get_xa_type_str(), in_recovery ? "in_recovery" : "",
+           m_is_binlogged ? "binlogged" : "", rm_error);
+  DBUG_ASSERT(retlen < (int)sizeof(buf));
+  str= buf;
+  return str;
+}
+
+
+/*
+  @param [in] buf serialized xid string
+  @retval true on format error; false on success.
+*/
+bool deserialize_xid(const char *buf, long &fmt, long &gln, long &bln,
+                     char *dat)
+{
+  if (ddc_mode) {
+    size_t bufl = strlen(buf);
+    if (bufl < 3 || buf[0] != '\'' || buf[bufl - 1] != '\'')
+      return true;
+    memcpy(dat, buf + 1, bufl - 2);
+    gln = bufl - 2;
+    bln = 0;
+    return false;
+  }
+
+  if (!(buf[0] == 'X' && buf[1] == '\''))
+    return true;
+
+  int i= 2, start, j= 0;
+
+  for (start= i; buf[i] && buf[i] != '\''; i+= 2, j++)
+  {
+    dat[j]= buf[i] - (isdigit(buf[i]) ? '0' : 'a' - 10);
+    dat[j] <<= 4;
+    dat[j] |= (buf[i + 1] - (isdigit(buf[i + 1]) ? '0' : 'a' - 10));
+  }
+
+  gln= (i - start) / 2;
+
+  if (!buf[i])
+    return true;
+  i++;
+  if (!(buf[i] == ',' && buf[i + 1] == 'X' && buf[i + 2]== '\''))
+    return true;
+  i+=3;
+
+  for (start= i; buf[i] && buf[i] != '\''; i+= 2, j++)
+  {
+    dat[j]= buf[i] - (isdigit(buf[i]) ? '0' : 'a' - 10);
+    dat[j] <<= 4;
+    dat[j] |= (buf[i + 1] - (isdigit(buf[i + 1]) ? '0' : 'a' - 10));
+  }
+
+  bln= i - 4 - gln;
+
+  if (buf[i + 1] != ',' || !buf[i + 2])
+    return true;
+  i+= 2;
+  sscanf(buf + i, "%lu", &fmt);
+  return false;
 }
 
 /**
@@ -1668,3 +1936,90 @@ bool reattach_native_trx(THD *thd, plugin_ref plugin, void *) {
   }
   return false;
 }
+
+int Prepared_xa_txnids::parse(const char *str, Txnids_t &ids)
+{
+  char *p= const_cast<char *>(str), *q= 0;
+
+  while ((q= strchr(p, '|')))
+  {
+    *q= '\0';
+    std::string s(p);
+    ids.insert(s);
+    *q='|';
+    p= q+1;
+  }
+
+  if (p != q && p && *p)
+  {
+    std::string s(p);
+    ids.insert(s);
+  }
+
+  // An empty list is totally OK and possible.
+  return 0;
+}
+
+void Prepared_xa_txnids::from_recovery(Txnids_t &prepared)
+{
+  for (Txnids_t::iterator j= prepared.begin(); j != prepared.end(); ++j)
+  {
+    add_id(*j);
+  }
+}
+
+void Prepared_xa_txnids::
+from_recovery(Txnids_t &prepared, const Txnids_t &committed,
+              const Txnids_t &aborted)
+{
+  Txnids_t::iterator j;
+
+  for (Txnids_t::iterator i= committed.begin(); i != committed.end(); ++i)
+    if ((j= prepared.find(*i)) != prepared.end())
+      prepared.erase(j);
+
+  for (Txnids_t::iterator i= aborted.begin(); i != aborted.end(); ++i)
+    if ((j= prepared.find(*i)) != prepared.end())
+      prepared.erase(j);
+  for (j= prepared.begin(); j != prepared.end(); ++j)
+  {
+    add_id(*j);
+  }
+}
+
+/*
+  this function is only called when rotating a log and LOCK_LOG is held by the
+  same thread, thus there can't be concurrent add/del to/from this object, we
+  are always dumping a consistent and complete bunch of IDs.
+*/
+void Prepared_xa_txnids::serialize(std::string &id)
+{
+  id.reserve(1024*32);
+
+  for (size_t i = 0; i < NSLOTS; i++)
+  {
+    m_slots[i].serialize(id);
+  }
+}
+
+void Prepared_xa_txnids::Slot::serialize(std::string &id)
+{
+  pthread_mutex_lock(&mutex);
+  int cnt = 0;
+  for (Txnids_t::iterator i= txnids.begin(); i != txnids.end(); ++i, cnt++)
+  {
+    if (cnt > 0 || id.length() > 0)
+      id+= "|";
+    id+= *i;
+  }
+  pthread_mutex_unlock(&mutex);
+}
+const char *strnchr(const char *str, char c, size_t n)
+{
+  for (size_t i = 0; i < n && str[i] != '\0'; i++)
+    if (str[i] == c)
+      return str + i;
+  return NULL;
+}
+
+#include "sql/xa_utils.cc"

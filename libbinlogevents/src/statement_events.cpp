@@ -35,15 +35,21 @@ namespace binary_log {
   to the log.
 */
 Query_event::Query_event(Log_event_type type_arg)
-    : Binary_log_event(type_arg),
-      query(0),
-      db(0),
-      user(0),
-      user_len(0),
-      host(0),
-      host_len(0),
-      db_len(0),
-      q_len(0) {}
+: Binary_log_event(type_arg), query(0), db(0), catalog(0), time_zone_str(0),
+  user(0), user_len(0), host(0), host_len(0), data_len(0), 
+  thread_id(0), query_exec_time(0), db_len(0),
+  error_code(0), status_vars_len(0), q_len(0), flags2_inited(false),
+  sql_mode_inited(false), charset_inited(false), flags2(0), sql_mode(0),
+  auto_increment_increment(1), auto_increment_offset(0), time_zone_len(0),
+  catalog_len(0), lc_time_names_number(0), charset_database_number(0),
+  table_map_for_update(0), mts_accessed_dbs(0)
+{
+  default_collation_for_utf8mb4_number = 0;
+  explicit_defaults_ts = TERNARY_UNSET;
+  ddl_xid = INVALID_XID;
+  sql_require_primary_key = 0xff;
+  default_table_encryption = 0xff;
+}
 
 /**
   The constructor used by MySQL master to create a query event, to be

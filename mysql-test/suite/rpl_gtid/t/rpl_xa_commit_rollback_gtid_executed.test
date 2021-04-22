@@ -1,0 +1,111 @@
+###############################################################################
+#
+# Steps to reproduce:
+###############################################################################
+
+# This test should run only on debug build
+--source include/have_debug.inc
+--source include/have_debug_sync.inc
+--source include/have_binlog_format_mixed_or_row.inc
+
+
+# Initial setup
+CREATE TABLE t1 (c1 INT);
+--connect(conn1, localhost, root,,,$MASTER_MYPORT)
+--connect(conn2, localhost, root,,,$MASTER_MYPORT)
+--connect(conn3, localhost, root,,,$MASTER_MYPORT)
+--connect(conn4, localhost, root,,,$MASTER_MYPORT)
+--connect(conn5, localhost, root,,,$MASTER_MYPORT)
+--connect(conn6, localhost, root,,,$MASTER_MYPORT)
+
+
+--connection conn1
+
+XA START 'trx1';
+--disable_warnings
+INSERT INTO t1 VALUES (1);
+--enable_warnings
+XA END 'trx1';
+XA PREPARE 'trx1';
+
+set session debug_sync="bgc_after_sync_stage_before_commit_stage WAIT_FOR continue_commit NO_CLEAR_EVENT";
+send XA COMMIT 'trx1';
+
+
+--connection conn2
+set session debug_sync="bgc_after_sync_stage_before_commit_stage WAIT_FOR continue_commit NO_CLEAR_EVENT";
+
+XA START 'trx2';
+--disable_warnings
+INSERT INTO t1 VALUES (2);
+--enable_warnings
+XA END 'trx2';
+
+send XA COMMIT 'trx2' ONE PHASE;
+
+--connection conn3
+set session debug_sync="bgc_after_sync_stage_before_commit_stage WAIT_FOR continue_commit NO_CLEAR_EVENT";
+
+--disable_warnings
+send INSERT INTO t1 VALUES (3);
+--enable_warnings
+
+--connection conn4
+set session debug_sync="bgc_after_sync_stage_before_commit_stage WAIT_FOR continue_commit NO_CLEAR_EVENT";
+
+begin;
+--disable_warnings
+INSERT INTO t1 VALUES (4);
+--enable_warnings
+send commit;
+
+
+--connection conn5
+set global multi_purpose_int = 0;
+# this should be blocked until conn1-4 finish committing their trx.
+set session debug="+d,count_trx_commit_waits_at_rotation";
+#CALL mtr.add_suppression("waiting for prep xids");
+send flush logs;
+
+
+--connection conn6
+--sleep 5
+SELECT @@global.multi_purpose_int as num_waits;
+--let $assert_text= flush log must wait 4 txn commits.
+--let $assert_cond= "[SELECT @@global.multi_purpose_int ]" = "4"
+--source include/assert.inc
+
+set session debug_sync="now SIGNAL continue_commit";
+
+
+--connection conn1
+--reap
+set session debug_sync="now SIGNAL conn1_done";
+--connection conn2
+--reap
+set session debug_sync="now SIGNAL conn2_done";
+--connection conn3
+--reap
+set session debug_sync="now SIGNAL conn3_done";
+--connection conn4
+--reap
+set session debug_sync="now SIGNAL conn4_done";
+
+--connection conn6
+set session debug_sync="now WAIT_FOR conn1_done ";
+set session debug_sync="now WAIT_FOR conn2_done ";
+set session debug_sync="now WAIT_FOR conn3_done ";
+set session debug_sync="now WAIT_FOR conn4_done ";
+
+--connection conn5
+--reap
+
+--connection conn6
+select*from t1 order by c1;
+--let $assert_text= t1 must contain 4 rows.
+--let $assert_cond= "[SELECT COUNT(*) FROM t1]" = "4"
+--source include/assert.inc
+
+set session debug_sync="reset";
+set global multi_purpose_int = 0;
+drop table t1;

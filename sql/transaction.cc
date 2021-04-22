@@ -155,6 +155,10 @@ bool trans_begin(THD *thd, uint flags) {
   thd->variables.option_bits &= ~OPTION_BEGIN;
   thd->get_transaction()->reset_unsafe_rollback_flags(Transaction_ctx::SESSION);
 
+  XID_STATE *xid_state= thd->get_transaction()->xid_state();
+  if (xid_state)
+    xid_state->set_xa_type(XID_STATE::XA_INTERNAL);
+
   if (res) return true;
 
   /*

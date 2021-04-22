@@ -402,6 +402,7 @@ int Clone_Snapshot::init_redo_copy(Clone_Alert_Func cbk) {
   ut_ad(m_snapshot_handle_type == CLONE_HDL_COPY);
   ut_ad(m_snapshot_type != HA_CLONE_BLOCKING);
 
+  DEBUG_SYNC_C("clone_before_stop_redo_archiving");
   /* Block external XA operations. XA prepare commit and rollback operations
   are first logged to binlog and added to global gtid_executed before doing
   operation in SE. Without blocking, we might persist such GTIDs from global

@@ -1,0 +1,24 @@
+!include ../my.cnf
+
+[mysqld.1]
+slave_skip_errors=1397
+group_replication_single_primary_mode=ON
+group_replication_enforce_update_everywhere_checks =false
+group_replication_group_name='800cc018-73d1-11ea-b92b-b30d26998df0'
+
+[mysqld.2]
+
+group_replication_single_primary_mode=ON
+slave_skip_errors=1397
+group_replication_enforce_update_everywhere_checks =false
+group_replication_group_name='800cc018-73d1-11ea-b92b-b30d26998df0'
+
+[mysqld.3]
+slave_skip_errors=1397
+group_replication_single_primary_mode=ON
+group_replication_enforce_update_everywhere_checks =false
+group_replication_group_name='800cc018-73d1-11ea-b92b-b30d26998df0'
+
+[ENV]
+SERVER_MYPORT_3=		@mysqld.3.port
+SERVER_MYSOCK_3=		@mysqld.3.socket

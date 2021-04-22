@@ -1,0 +1,274 @@
+# Test clone with different table types with debug sync
+
+--source include/have_debug_sync.inc
+--source include/count_sessions.inc
+
+--let $rpl_gtid_mode= ON
+--let $rpl_set_enforce_gtid_consistency= 1
+--source include/rpl_set_gtid_mode.inc
+call mtr.add_suppression("\\[Warning\\] .*MY-\\d+.* \\[Server\\] Found 1 prepared XA transactions");
+set global clone_binlog_phy_consistency = false;
+## Install plugin
+--let $CLONE_DATADIR = $MYSQL_TMP_DIR/data_new
+
+--replace_result $CLONE_PLUGIN CLONE_PLUGIN
+--eval INSTALL PLUGIN clone SONAME '$CLONE_PLUGIN'
+
+## Create test schema
+create table t1(a int);
+insert into t1 values(1);
+begin;
+insert into t1 values(2),(3);
+commit;
+
+xa start 'a1';
+insert into t1 values(4),(5);
+xa end 'a1';
+xa commit 'a1' one phase;
+
+xa start 'a2';
+insert into t1 values(6),(7);
+xa end 'a2';
+xa prepare 'a2';
+xa commit 'a2';
+
+select*from t1;
+
+--echo # In connection con0
+connect (con0,localhost,root,,);
+xa start 'a3';
+insert into t1 values(8);
+xa end 'a3';
+xa prepare 'a3';
+
+
+--echo ## Test: Clone with XA transactions
+
+--echo # In connection con1 - Start XA COP
+connect (con1,localhost,root,,);
+
+XA start 'xa_trx_1';
+insert into t1 values(9);
+XA end 'xa_trx_1';
+
+SET DEBUG_SYNC = 'bgc_before_flush_stage SIGNAL start_clone1 WAIT_FOR resume_txns1 NO_CLEAR_EVENT';
+--send XA commit 'xa_trx_1' one phase;
+
+--echo # In connection con2
+connect (con2,localhost,root,,);
+begin;
+insert into t1 values(10),(11);
+SET DEBUG_SYNC = 'bgc_before_flush_stage SIGNAL start_clone2 WAIT_FOR resume_txns1 NO_CLEAR_EVENT';
+--send commit;
+
+--echo # In connection con3
+connect (con3,localhost,root,,);
+SET DEBUG_SYNC = 'bgc_before_flush_stage SIGNAL start_clone3 WAIT_FOR resume_txns1 NO_CLEAR_EVENT';
+--send insert into t1 values(12),(13);
+
+--echo # In connection con4
+connect (con4,localhost,root,,);
+XA start 'xa_trx_2';
+insert into t1 values(14),(15);
+XA end 'xa_trx_2';
+
+SET DEBUG_SYNC = 'bgc_before_flush_stage SIGNAL start_clone4 WAIT_FOR resume_txns1 NO_CLEAR_EVENT';
+--send XA prepare 'xa_trx_2';
+
+#--echo # In connection con5
+#connect (con5,localhost,root,,);
+#XA start 'xa_trx_3';
+#insert into t1 values(16),(17);
+#XA end 'xa_trx_3';
+
+#SET DEBUG_SYNC = 'bgc_after_flush_binlogs_before_updating_pos SIGNAL start_clone5 WAIT_FOR resume_txns1 NO_CLEAR_EVENT';
+#--send XA prepare 'xa_trx_3';
+
+--echo # In connection con6
+connect (con6,localhost,root,,);
+XA start 'xa_trx_4';
+insert into t1 values(18),(19);
+XA end 'xa_trx_4';
+XA prepare 'xa_trx_4';
+SET DEBUG_SYNC = 'now SIGNAL start_clone5';
+
+connection default;
+--echo # In connection default - Start Cloning database
+SET DEBUG_SYNC = 'now WAIT_FOR start_clone1';
+SET DEBUG_SYNC = 'now WAIT_FOR start_clone2';
+SET DEBUG_SYNC = 'now WAIT_FOR start_clone3';
+SET DEBUG_SYNC = 'now WAIT_FOR start_clone4';
+SET DEBUG_SYNC = 'now WAIT_FOR start_clone5';
+SET DEBUG_SYNC = 'clone_before_stop_redo_archiving SIGNAL exec_more_txns WAIT_FOR resume_clone1';
+SET DEBUG_SYNC = 'clone_before_stop_redo_archiving SIGNAL exec_more_txns WAIT_FOR resume_clone2';
+SET DEBUG_SYNC = 'clone_before_stop_redo_archiving SIGNAL exec_more_txns WAIT_FOR resume_clone3';
+SET DEBUG_SYNC = 'clone_before_stop_redo_archiving SIGNAL exec_more_txns WAIT_FOR resume_clone4';
+SET DEBUG_SYNC = 'clone_before_stop_redo_archiving SIGNAL exec_more_txns WAIT_FOR resume_clone5';
+--source ../include/clone_command_send.inc
+
+connect (con7,localhost,root,,);
+SET DEBUG_SYNC = 'now WAIT_FOR exec_more_txns NO_CLEAR_EVENT';
+insert into t1 values(21);
+begin;
+insert into t1 values(22),(23);
+commit;
+
+xa start 'b1';
+insert into t1 values(24),(25);
+xa end 'b1';
+xa commit 'b1' one phase;
+
+xa start 'b2';
+insert into t1 values(26),(27);
+xa end 'b2';
+xa prepare 'b2';
+xa commit 'b2';
+
+
+--echo # In connection con8
+connect (con8,localhost,root,,);
+SET DEBUG_SYNC = 'now WAIT_FOR exec_more_txns NO_CLEAR_EVENT';
+
+XA start 'xa_trx_5';
+insert into t1 values(29);
+XA end 'xa_trx_5';
+
+SET DEBUG_SYNC = 'bgc_before_flush_stage SIGNAL resume_clone1 WAIT_FOR resume_txns2 NO_CLEAR_EVENT';
+--send XA commit 'xa_trx_5' one phase;
+
+--echo # In connection con9
+connect (con9,localhost,root,,);
+SET DEBUG_SYNC = 'now WAIT_FOR exec_more_txns NO_CLEAR_EVENT';
+begin;
+insert into t1 values(30),(31);
+SET DEBUG_SYNC = 'bgc_before_flush_stage SIGNAL resume_clone2 WAIT_FOR resume_txns2 NO_CLEAR_EVENT';
+--send commit;
+
+--echo # In connection con10
+connect (con10,localhost,root,,);
+SET DEBUG_SYNC = 'now WAIT_FOR exec_more_txns NO_CLEAR_EVENT';
+SET DEBUG_SYNC = 'bgc_before_flush_stage SIGNAL resume_clone3 WAIT_FOR resume_txns2 NO_CLEAR_EVENT';
+--send insert into t1 values(32),(33);
+
+--echo # In connection con11
+connect (con11,localhost,root,,);
+SET DEBUG_SYNC = 'now WAIT_FOR exec_more_txns NO_CLEAR_EVENT';
+XA start 'xa_trx_6';
+insert into t1 values(34),(35);
+XA end 'xa_trx_6';
+
+SET DEBUG_SYNC = 'bgc_before_flush_stage SIGNAL resume_clone4 WAIT_FOR resume_txns2 NO_CLEAR_EVENT';
+--send XA prepare 'xa_trx_6';
+
+#--echo # In connection con12
+#connect (con12,localhost,root,,);
+#SET DEBUG_SYNC = 'now WAIT_FOR exec_more_txns NO_CLEAR_EVENT';
+#XA start 'xa_trx_7';
+#insert into t1 values(36),(37);
+#XA end 'xa_trx_7';
+#
+#SET DEBUG_SYNC = 'bgc_after_flush_binlogs_before_updating_pos SIGNAL resume_clone5 WAIT_FOR resume_txns2 NO_CLEAR_EVENT';
+#--send XA prepare 'xa_trx_7';
+
+--echo # In connection con13
+connect (con13,localhost,root,,);
+SET DEBUG_SYNC = 'now WAIT_FOR exec_more_txns NO_CLEAR_EVENT';
+XA start 'xa_trx_8';
+insert into t1 values(38),(39);
+XA end 'xa_trx_8';
+XA prepare 'xa_trx_8';
+SET DEBUG_SYNC = 'now SIGNAL resume_clone5';
+
+--echo # In connection default - Finish Cloning database
+connection default;
+--reap
+
+SET DEBUG_SYNC = 'now SIGNAL resume_txns1';
+SET DEBUG_SYNC = 'now SIGNAL resume_txns2';
+
+--echo # In connection con1 - Finish txn commit/prepare
+connection con1;
+--reap
+--echo # In connection con2 - Finish txn commit/prepare
+connection con2;
+--reap
+--echo # In connection con3 - Finish txn commit/prepare
+connection con3;
+--reap
+--echo # In connection con4 - Finish txn commit/prepare
+connection con4;
+--reap
+#--echo # In connection con5 - Finish txn commit/prepare
+#connection con5;
+#--reap
+--echo # In connection con8 - Finish txn commit/prepare
+connection con8;
+--reap
+
+--echo # In connection con9 - Finish txn commit/prepare
+connection con9;
+--reap
+--echo # In connection con10 - Finish txn commit/prepare
+connection con10;
+--reap
+--echo # In connection con11 - Finish txn commit/prepare
+connection con11;
+--reap
+#--echo # In connection con12 - Finish txn commit/prepare
+#connection con12;
+#--reap
+
+connection default;
+--echo # In connection default
+xa recover;
+select*from t1;
+# take care of xa_trx_2/4/6/8 and a3:
+disconnect con11; # leave xa_trx_6 detached and prepared
+disconnect con13; # leave xa_trx_8 detached and prepared
+connection con6;
+xa commit 'xa_trx_4';
+# keep con0/a3 and con4/xa_trx_2 prepared.
+--echo #restart donor
+--let restart_parameters="restart:"
+--source include/restart_mysqld.inc
+xa recover;
+select*from t1;
+
+
+--echo # Restart using cloned database datadir
+--replace_result $CLONE_DATADIR CLONE_DATADIR
+--let restart_parameters="restart: --datadir=$CLONE_DATADIR"
+--source include/restart_mysqld.inc
+
+--let $rpl_gtid_mode= ON
+--let $rpl_set_enforce_gtid_consistency= 1
+--source include/rpl_set_gtid_mode.inc
+# Check table in cloned database
+SHOW CREATE TABLE t1;
+SELECT * from t1;
+
+--echo # expected: xa_trx_4/8, a3
+XA recover;
+
+xa commit 'xa_trx_4';
+xa commit 'xa_trx_8';
+xa commit 'a3';
+SELECT * from t1;
+
+# Restart donor and Remove cloned directory
+--let restart_parameters="restart:"
+--source include/restart_mysqld.inc
+--force-rmdir $CLONE_DATADIR
+
+xa recover;
+#end the prepared txns otherwise t1 can't be dropped.
+xa commit 'xa_trx_2';
+xa commit 'xa_trx_6';
+xa commit 'xa_trx_8';
+xa rollback 'a3';
+select*from t1;
+
+# Cleanup
+drop table t1;
+UNINSTALL PLUGIN clone;
+SET DEBUG_SYNC = 'RESET';

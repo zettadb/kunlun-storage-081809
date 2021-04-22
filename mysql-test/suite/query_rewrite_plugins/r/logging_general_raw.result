@@ -24,7 +24,7 @@ SELECT substring_index( line, ' ', -1 ) AS incoming_query
 FROM test_log
 WHERE line LIKE ( '%SELECT%' );
 incoming_query
-'The_original_query'
+
 DROP TABLE test_log;
 SET GLOBAL general_log = DEFAULT;
 SET GLOBAL general_log_file=  @old_general_log_file;

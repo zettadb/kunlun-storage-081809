@@ -151,7 +151,7 @@ Format_description_event::Format_description_event(uint8_t binlog_ver,
           ROWS_HEADER_LEN_V2,
           Gtid_event::POST_HEADER_LENGTH, /*GTID_EVENT*/
           Gtid_event::POST_HEADER_LENGTH, /*ANONYMOUS_GTID_EVENT*/
-          IGNORABLE_HEADER_LEN,
+          IGNORABLE_HEADER_LEN, /* prev-gtids */
           TRANSACTION_CONTEXT_HEADER_LEN,
           VIEW_CHANGE_HEADER_LEN,
           XA_PREPARE_HEADER_LEN,

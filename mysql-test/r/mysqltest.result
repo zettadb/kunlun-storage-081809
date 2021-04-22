@@ -1088,6 +1088,10 @@ State	Waiting on empty queue
 Info	
 Rows_sent	0
 Rows_examined	0
+pthread_id	0
+thread_tid	0
+global_conn_id	0
+comp_node_id	0
 ---- 2. ----
 Id MASKED
 User	root
@@ -1099,6 +1103,10 @@ State
 Info	
 Rows_sent	1
 Rows_examined	1
+pthread_id	0
+thread_tid	0
+global_conn_id	0
+comp_node_id	0
 ---- 3. ----
 Id MASKED
 User	root
@@ -1110,6 +1118,10 @@ State	starting
 Info	SHOW PROCESSLIST
 Rows_sent	0
 Rows_examined	0
+pthread_id	0
+thread_tid	0
+global_conn_id	0
+comp_node_id	0
 ========================
 
 mysqltest: At line 1: Query 'KILL QUERY 276447231' failed.
@@ -1131,6 +1143,10 @@ State	Waiting on empty queue
 Info	
 Rows_sent	0
 Rows_examined	0
+pthread_id	0
+thread_tid	0
+global_conn_id	0
+comp_node_id	0
 ---- 2. ----
 Id MASKED
 User	root
@@ -1142,6 +1158,10 @@ State
 Info	
 Rows_sent	1
 Rows_examined	1
+pthread_id	0
+thread_tid	0
+global_conn_id	0
+comp_node_id	0
 ---- 3. ----
 Id MASKED
 User	root
@@ -1153,6 +1173,10 @@ State	starting
 Info	SHOW PROCESSLIST
 Rows_sent	0
 Rows_examined	0
+pthread_id	0
+thread_tid	0
+global_conn_id	0
+comp_node_id	0
 ========================
 
 mysqltest: At line 1: Query 'KILL QUERY 276447231' failed with wrong error 1094: '', should have failed with error '1064'.

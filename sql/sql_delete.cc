@@ -74,6 +74,8 @@
 #include "sql/transaction_info.h"
 #include "sql/trigger_def.h"
 #include "sql/uniques.h"  // Unique
+#include "sql/protocol.h"
+#include "sql/query_result.h"
 
 class COND_EQUAL;
 class Item_exists_subselect;
@@ -88,6 +90,13 @@ bool Sql_cmd_delete::precheck(THD *thd) {
   if (!multitable) {
     if (check_one_table_access(thd, DELETE_ACL, tables)) return true;
   } else {
+
+    if (!lex->select_lex->returning_list.is_empty())
+    {
+      my_error(ER_NOT_SUPPORTED_YET, MYF(0), "Multi-table delete returning");
+      return true;
+    }
+
     TABLE_LIST *aux_tables = delete_tables->first;
     TABLE_LIST **save_query_tables_own_last = lex->query_tables_own_last;
 
@@ -224,6 +233,9 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
     delete_from_single_table(), Query_result_delete::optimize() and
   */
   if (lex->is_ignore()) table->file->ha_extra(HA_EXTRA_IGNORE_DUP_KEY);
+
+  const bool returning_result= (select_lex->returning_list.elements > 0 &&
+                                thd->system_thread == NON_SYSTEM_THREAD);
 
   /*
     Test if the user wants to delete all rows and deletion doesn't have
@@ -474,11 +486,13 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
 
     THD_STAGE_INFO(thd, stage_updating);
 
-    if (has_after_triggers) {
+    if (has_after_triggers || returning_result) {
       /*
         The table has AFTER DELETE triggers that might access to subject table
         and therefore might need delete to be done immediately. So we turn-off
         the batching.
+        And we do not support returning in batch update mode, so turn
+        it off if the query has returning clause.
       */
       (void)table->file->ha_extra(HA_EXTRA_DELETE_CANNOT_BATCH);
       will_batch = false;
@@ -494,6 +508,13 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
         qep_tab.quick()->index != MAX_KEY)
       read_removal = table->check_read_removal(qep_tab.quick()->index);
 
+    Query_result* qres= select_lex->query_result();
+    DBUG_ASSERT((!qres && !returning_result) || (qres && returning_result));
+    if (returning_result)
+    {
+      qres->send_result_set_metadata(thd, select_lex->returning_list,
+          Protocol::SEND_NUM_ROWS | Protocol::SEND_EOF);
+    }
     DBUG_ASSERT(limit > 0);
 
     // The loop that reads rows and delete those that qualify
@@ -519,6 +540,9 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
         error = 1;
         break;
       }
+
+      if (error == 0 && returning_result)
+        qres->send_data(thd, select_lex->returning_list);
 
       if ((error = table->file->ha_delete_row(table->record[0]))) {
         if (table->file->is_fatal_error(error)) error_flags |= ME_FATALERROR;
@@ -551,6 +575,9 @@ bool Sql_cmd_delete::delete_from_single_table(THD *thd) {
         break;
       }
     }
+
+    if (returning_result)
+      qres->send_eof(thd);
 
     killed_status = thd->killed;
     if (killed_status != THD::NOT_KILLED || thd->is_error())
@@ -611,7 +638,8 @@ cleanup:
       transactional_table || deleted_rows == 0 ||
       thd->get_transaction()->cannot_safely_rollback(Transaction_ctx::STMT));
   if (error < 0) {
-    my_ok(thd, deleted_rows);
+    if (!returning_result)
+      my_ok(thd, deleted_rows);
     DBUG_PRINT("info", ("%ld records deleted", (long)deleted_rows));
   }
 
@@ -641,6 +669,9 @@ bool Sql_cmd_delete::prepare_inner(THD *thd) {
   Opt_trace_object trace_prepare(trace, "delete_preparation");
   trace_prepare.add_select_number(select->select_number);
   Opt_trace_array trace_steps(trace, "steps");
+  
+  const bool returning_result= (select->returning_list.elements > 0 &&
+                                thd->system_thread == NON_SYSTEM_THREAD && !multitable);
 
   if (multitable) {
     if (select->top_join_list.elements > 0)
@@ -664,6 +695,7 @@ bool Sql_cmd_delete::prepare_inner(THD *thd) {
     table_list->updating = true;
     select->make_active_options(0, 0);
     apply_semijoin = false;
+    /* setup facilities for returning clause execution. */
   }
 
   if (select->setup_tables(thd, table_list, false))
@@ -762,6 +794,18 @@ bool Sql_cmd_delete::prepare_inner(THD *thd) {
                     select->order_list.first))
       return true;
   }
+
+  if (returning_result)
+  {
+    Query_result_send *qrs= new (thd->mem_root) Query_result_send;
+    select->set_query_result(qrs);
+    if (select->with_wild &&
+        select->setup_wild_in_returning(thd))
+      return true;
+  }
+  if (setup_fields(thd, Ref_item_array(), select->returning_list, SELECT_ACL,
+                   NULL, false, false))
+    return true;                     /* purecov: inspected */
 
   thd->want_privilege = want_privilege_saved;
   thd->mark_used_columns = mark_used_columns_saved;
@@ -1302,5 +1346,10 @@ bool Query_result_delete::send_eof(THD *thd) {
 }
 
 bool Sql_cmd_delete::accept(THD *thd, Select_lex_visitor *visitor) {
+  // Returning clause
+  List_iterator<Item> it_rl(returning_list);
+  Item *rlitem = NULL;
+  while ((rlitem = it_rl++))
+    if (walk_item(rlitem, visitor)) return true;
   return thd->lex->unit->accept(visitor);
 }

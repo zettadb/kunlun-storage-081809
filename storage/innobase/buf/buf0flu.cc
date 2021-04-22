@@ -3053,7 +3053,7 @@ static void buf_flush_page_coordinator_thread(size_t n_page_cleaners) {
     /* The page_cleaner skips sleep if the server is
     idle and there are no pending IOs in the buffer pool
     and there is work to do. */
-    if ((is_server_active || buf_get_n_pending_read_ios() || n_flushed == 0) &&
+    if ((is_server_active || n_flushed == 0 || buf_get_n_pending_read_ios()) &&
         !is_sync_flush) {
       ret_sleep = pc_sleep_if_needed(next_loop_time, sig_count);
 
@@ -3198,6 +3198,7 @@ static void buf_flush_page_coordinator_thread(size_t n_page_cleaners) {
 
     } else {
       /* no activity, but woken up by event */
+      os_thread_sleep(5000);
     }
 
     ut_d(buf_flush_page_cleaner_disabled_loop());

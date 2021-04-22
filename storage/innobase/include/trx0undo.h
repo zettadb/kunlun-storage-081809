@@ -418,7 +418,7 @@ void trx_undo_gtid_set(trx_t *trx, trx_undo_t *undo);
 
 /** Read and persist GTID from undo header during recovery.
 @param[in]	undo_log	undo log header */
-void trx_undo_gtid_read_and_persist(trx_ulogf_t *undo_log);
+void trx_undo_gtid_read_and_persist(trx_ulogf_t *undo_log, trx_undo_t *undo);
 
 /** Write GTID information to undo log header.
 @param[in,out]	trx		transaction
@@ -529,6 +529,9 @@ page of an update undo log segment. */
 #define TRX_UNDO_FLAG_GTID                   \
   0x02 /*!< TRUE if undo log header includes \
        GTID information from replication */
+#define TRX_UNDO_FLAG_ONE_PHASE_PREPARED     \
+  0x80 /*!< TRUE if it is an external XA txn and it's prepared by XA COP. */
+
 #define TRX_UNDO_DICT_TRANS                  \
   21 /*!< TRUE if the transaction is a table \
      create, index create, or drop           \
@@ -591,8 +594,13 @@ information */
 /** Total length of GTID */
 #define TRX_UNDO_LOG_GTID_LEN 64
 
+/** GTID offset for 2nd event group, for XA COP, the 2nd gtid slot is empty.
+ * Do not bother to save the 64 bytes undo log space for a one phase XA txn.
+ */
+#define TRX_UNDO_LOG_GTID2 (TRX_UNDO_LOG_GTID + TRX_UNDO_LOG_GTID_LEN)
+
 /** Total size of GTID information. */
-#define TRX_UNDO_LOG_HDR_SIZE (TRX_UNDO_LOG_GTID + TRX_UNDO_LOG_GTID_LEN)
+#define TRX_UNDO_LOG_HDR_SIZE (TRX_UNDO_LOG_GTID + TRX_UNDO_LOG_GTID_LEN*2)
 
 #include "trx0undo.ic"
 #endif

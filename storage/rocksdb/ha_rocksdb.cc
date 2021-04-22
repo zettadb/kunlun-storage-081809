@@ -3454,10 +3454,10 @@ static void rdb_xid_from_string(const std::string &src, XID *const dst) {
   Reading last committed binary log info from RocksDB system row.
   The info is needed for crash safe slave/master to work.
 */
-static int rocksdb_recover(handlerton *hton, XA_recover_txn *txn_list, uint len,
+static int rocksdb_recover(handlerton *hton, XA_recover_txn_list *txn_list,
                            MEM_ROOT *mem_root) {
 
-  if (len == 0 || txn_list == nullptr) {
+  if (txn_list == nullptr) {
     return HA_EXIT_SUCCESS;
   }
 
@@ -3466,16 +3466,15 @@ static int rocksdb_recover(handlerton *hton, XA_recover_txn *txn_list, uint len,
 
   uint count = 0;
   for (auto &trans : trans_list) {
-    if (count >= len) {
-      break;
-    }
     auto name = trans->GetName();
-    rdb_xid_from_string(name, &(txn_list[count].id));
+    XA_recover_txn xrt;
+    rdb_xid_from_string(name, &xrt.id);
 
-    txn_list[count].mod_tables = new (mem_root) List<st_handler_tablename>();
-    if (!txn_list[count].mod_tables)
+    // TODO: rocksdb doesn't lock tables accessed by prepared txns.
+    xrt.mod_tables = new (mem_root) List<st_handler_tablename>();
+    if (!xrt.mod_tables)
       break;
-
+    txn_list->push_back(xrt);
     count++;
   }
   return count;

@@ -177,6 +177,9 @@
 #include "sql/debug_lock_order.h"
 #endif /* WITH_LOCK_ORDER */
 
+extern bool disconnect_on_net_write_timeout;
+extern int print_extra_info;
+
 namespace dd {
 class Spatial_reference_system;
 }  // namespace dd
@@ -1307,6 +1310,13 @@ out:
   /* The statement instrumentation must be closed in all cases. */
   DBUG_ASSERT(thd->m_digest == NULL);
   DBUG_ASSERT(thd->m_statement_psi == NULL);
+  /*
+    If net operations fail with error, we should close the socket connection
+    othewise client would be blocked waiting for more data but server side isn't
+    sending any more data to it.
+  */
+  if (!return_value && thd->got_net_error() && disconnect_on_net_write_timeout)
+    return_value= true;
   return return_value;
 }
 
@@ -1600,6 +1610,7 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
   if (thd->get_protocol()->type() == Protocol::PROTOCOL_PLUGIN &&
       !(server_command_flags[command] & CF_ALLOW_PROTOCOL_PLUGIN)) {
     my_error(ER_PLUGGABLE_PROTOCOL_COMMAND_NOT_SUPPORTED, MYF(0));
+    thd->print_aborted_warning(1, "PROTOCOL PLUGIN FORBIDDEN");
     thd->killed = THD::KILL_CONNECTION;
     error = true;
     goto done;
@@ -1697,6 +1708,7 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
                  thd->security_context()->host_or_ip().str,
                  (thd->password ? ER_THD(thd, ER_YES) : ER_THD(thd, ER_NO)));
         thd->killed = THD::KILL_CONNECTION;
+        thd->print_aborted_warning(1, "CHANGE USER ACCESS DENIED");
         error = true;
       } else {
 #ifdef HAVE_PSI_THREAD_INTERFACE
@@ -2017,18 +2029,39 @@ bool dispatch_command(THD *thd, const COM_DATA *com_data,
         thd->get_protocol_classic()->get_net()->error = 0;
       thd->get_stmt_da()->disable_status();  // Don't send anything back
       error = true;                          // End server
+      thd->conn_broken_cmd= COM_QUIT;
+      if (print_extra_info > 3)
+        sql_print_warning("Client is quiting this connection: thread_id: %u, port: %u, %s.",
+                           thd->thread_id(), thd->peer_port,
+                           (thd->security_context()? thd->security_context()->toString().c_str() : "[no security ctx info]"));
       break;
     case COM_BINLOG_DUMP_GTID:
       // TODO: access of protocol_classic should be removed
+      thd_wait_begin(thd,0);
+      thd->set_long_svc(true);
       error = com_binlog_dump_gtid(
           thd, (char *)thd->get_protocol_classic()->get_raw_packet(),
           thd->get_protocol_classic()->get_packet_length());
+      thd_wait_end(thd);
+      thd->conn_broken_cmd= COM_BINLOG_DUMP_GTID;
+      if (print_extra_info)
+        sql_print_error("Binlog dump error, thread exiting. thread_id: %u, port: %u, %s.",
+                        thd->thread_id(), thd->peer_port,
+                        (thd->security_context() ? thd->security_context()->toString().c_str() : "[no security ctx info]"));
       break;
     case COM_BINLOG_DUMP:
       // TODO: access of protocol_classic should be removed
+      thd_wait_begin(thd,0);
+      thd->set_long_svc(true);
       error = com_binlog_dump(
           thd, (char *)thd->get_protocol_classic()->get_raw_packet(),
           thd->get_protocol_classic()->get_packet_length());
+      thd_wait_end(thd);
+      thd->conn_broken_cmd= COM_BINLOG_DUMP;
+      if (print_extra_info)
+        sql_print_error("Binlog dump error, thread exiting. thread_id: %u, port: %u, %s.",
+                        thd->thread_id(), thd->peer_port,
+                        (thd->security_context() ? thd->security_context()->toString().c_str() : "[no security ctx info]"));
       break;
     case COM_REFRESH: {
       int not_used;
@@ -3082,6 +3115,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
   if (thd->get_protocol()->type() == Protocol::PROTOCOL_PLUGIN &&
       !(sql_command_flags[lex->sql_command] & CF_ALLOW_PROTOCOL_PLUGIN)) {
     my_error(ER_PLUGGABLE_PROTOCOL_COMMAND_NOT_SUPPORTED, MYF(0));
+    thd->print_aborted_warning(1, "PROTOCOL PLUGIN FORBIDDEN");
     goto error;
   }
 
@@ -3186,6 +3220,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
 
     case SQLCOM_PURGE: {
       Security_context *sctx = thd->security_context();
+      thd->set_long_svc(true);
       if (lex->type == 0) {
         /* PURGE MASTER LOGS TO 'file' */
         if (!sctx->check_access(SUPER_ACL) &&
@@ -3194,7 +3229,9 @@ int mysql_execute_command(THD *thd, bool first_level) {
                    "SUPER or BINLOG_ADMIN");
           goto error;
         }
+        thd_wait_begin(thd,0);
         res = purge_master_logs(thd, lex->to_log);
+		thd_wait_end(thd);
         break;
       } else if (lex->type == PURGE_BITMAPS_TO_LSN) {
         /* PURGE CHANGED_PAGE_BITMAPS BEFORE lsn */
@@ -3211,7 +3248,9 @@ int mysql_execute_command(THD *thd, bool first_level) {
           goto error;
         }
         lsn = it->val_uint();
+        thd_wait_begin(thd,0);
         res = ha_purge_changed_page_bitmaps(lsn);
+		thd_wait_end(thd);
         if (res) {
           my_error(ER_LOG_PURGE_UNKNOWN_ERR, MYF(0),
                    "PURGE CHANGED_PAGE_BITMAPS BEFORE");
@@ -3225,6 +3264,7 @@ int mysql_execute_command(THD *thd, bool first_level) {
     case SQLCOM_PURGE_BEFORE: {
       Item *it;
       Security_context *sctx = thd->security_context();
+      thd->set_long_svc(true);
       if (!sctx->check_access(SUPER_ACL) &&
           !sctx->has_global_grant(STRING_WITH_LEN("BINLOG_ADMIN")).first) {
         my_error(ER_SPECIFIC_ACCESS_DENIED_ERROR, MYF(0),
@@ -3245,7 +3285,9 @@ int mysql_execute_command(THD *thd, bool first_level) {
       it->quick_fix_field();
       time_t purge_time = static_cast<time_t>(it->val_int());
       if (thd->is_error()) goto error;
+      thd_wait_begin(thd,0);
       res = purge_master_logs_before_date(thd, purge_time);
+	  thd_wait_end(thd);
       break;
     }
     case SQLCOM_SHOW_WARNS: {
@@ -4250,7 +4292,10 @@ int mysql_execute_command(THD *thd, bool first_level) {
         trans_reset_one_shot_chistics(thd);
       }
       /* Disconnect the current client connection. */
-      if (tx_release) thd->killed = THD::KILL_CONNECTION;
+      if (tx_release) {
+        thd->killed = THD::KILL_CONNECTION;
+		thd->print_aborted_warning(1, "RELEASE");
+	  }
       my_ok(thd);
       break;
     }
@@ -4274,7 +4319,10 @@ int mysql_execute_command(THD *thd, bool first_level) {
         trans_reset_one_shot_chistics(thd);
       }
       /* Disconnect the current client connection. */
-      if (tx_release) thd->killed = THD::KILL_CONNECTION;
+      if (tx_release) {
+        thd->killed = THD::KILL_CONNECTION;
+		thd->print_aborted_warning(1, "RELEASE");
+	  }
       my_ok(thd);
       break;
     }

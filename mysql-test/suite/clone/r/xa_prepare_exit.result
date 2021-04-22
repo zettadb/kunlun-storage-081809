@@ -1,0 +1,71 @@
+include/rpl_set_gtid_mode.inc [ON_PERMISSIVE on servers 1]
+create table t1(a int);
+xa start 'a1';
+insert into t1 values(1);
+xa end 'a1';
+xa prepare 'a1';
+xa recover;
+formatID	gtrid_length	bqual_length	data
+1	2	0	a1
+set gtid_next='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:1';
+set session sql_log_bin=off;
+xa start 'a2';
+insert into t1 values(2);
+xa end 'a2';
+xa prepare 'a2';
+select*from t1;
+ERROR XAE07: XAER_RMFAIL: The command cannot be executed when global transaction is in the  PREPARED state
+xa recover;
+formatID	gtrid_length	bqual_length	data
+-1	2	0	a2
+1	2	0	a1
+# a2 should not have been committed
+# this is a bug of mysql, the 'a2' txn was committed unexpectedly in gtid_end_transaction() which should only store the gtid into mysql.gtid_executed.
+select*from t1;
+a
+2
+set session sql_log_bin=off;
+xa start 'a3';
+insert into t1 values(3);
+xa end 'a3';
+xa prepare 'a3';
+xa recover;
+formatID	gtrid_length	bqual_length	data
+1	2	0	a3
+-1	2	0	a2
+1	2	0	a1
+set gtid_next='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:2';
+xa start 'a4';
+insert into t1 values(4);
+xa end 'a4';
+xa prepare 'a4';
+xa recover;
+formatID	gtrid_length	bqual_length	data
+1	2	0	a4
+1	2	0	a3
+-1	2	0	a2
+1	2	0	a1
+# restart: --skip-log-bin
+xa recover;
+formatID	gtrid_length	bqual_length	data
+1	2	0	a1
+1	2	0	a3
+1	2	0	a4
+select*from mysql.gtid_executed;
+source_uuid	interval_start	interval_end
+6d084e74-a1c1-11eb-9631-4cebbd6252a3	1	24
+aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa	1	2
+xa commit 'a1';
+select*from t1;
+a
+1
+2
+# restart: 
+xa recover;
+formatID	gtrid_length	bqual_length	data
+1	2	0	a3
+1	2	0	a4
+select*from mysql.gtid_executed;
+source_uuid	interval_start	interval_end
+6d084e74-a1c1-11eb-9631-4cebbd6252a3	1	24
+aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa	1	2

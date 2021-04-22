@@ -1,0 +1,222 @@
+--source include/have_log_bin.inc
+
+
+--let $xa_cmd=prepare
+--let $xa_cmd_extra=
+
+--let $debug_point=crash_after_flush_engine_log
+--let $innodb_recovered_txns_expected=1
+--let $innodb_aborted_txns_no_gtid_expected=0
+--source ./xa_prepare_recovery.inc 
+
+--let $debug_point=crash_before_flush_binlog
+--let $innodb_recovered_txns_expected=0
+--let $innodb_aborted_txns_no_gtid_expected=1
+--source ./xa_prepare_recovery.inc 
+
+
+
+--let $xa_cmd=commit
+--let $xa_cmd_extra=one phase
+
+--let $debug_point=crash_after_flush_engine_log
+--let $innodb_recovered_txns_expected=1
+--let $innodb_aborted_txns_no_gtid_expected=0
+--source ./xa_prepare_recovery.inc 
+
+--let $debug_point=crash_before_flush_binlog
+--let $innodb_recovered_txns_expected=1
+--let $innodb_aborted_txns_no_gtid_expected=0
+--source ./xa_prepare_recovery.inc 
+
+
+#create database test;
+#
+#use test;
+#create table t1(a serial primary key, b int);
+#
+#insert into t1(b) values(1);
+#
+#begin;
+#insert into t1(b) values(2);
+#commit;
+#
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a1';
+#insert into t1(b) values(3);
+#xa end 'a1';
+#xa prepare 'a1';
+#--echo expect a1
+#xa recover;
+#
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a11';
+#update t1 set b=b+1 where a=1;
+#xa end 'a11';
+#xa prepare 'a11';
+#--echo expect a11
+#xa recover;
+#
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a2';
+#insert into t1(b) values(3);
+#update t1 set b=b+1 where a=2;
+#xa end 'a2';
+#xa prepare 'a2';
+#--echo expect a2
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a3';
+#insert into t11(b) values(1);
+#xa end 'a3';
+#xa prepare 'a3';
+#--echo expect a3
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#insert into t11(b) values(1),(2),(3);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a31';
+#delete from t11 where a=2;
+#update t11 set b=b+1 where a=1;
+#xa end 'a31';
+#xa prepare 'a31';
+#--echo expect a31
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#insert into t11(b) values(1),(2),(3);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a32';
+#insert into t11(b) values(4);
+#update t11 set b=b+1 where a=2;
+#xa end 'a32';
+#xa prepare 'a32';
+#--echo expect a32
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a33';
+#insert into t11(b) values(1);
+#insert into t1(b) values(11);
+#xa end 'a33';
+#xa prepare 'a33';
+#--echo expect a33
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a331';
+#insert into t11(b) values(1);
+#update t1 set b=b+1 where a=1;
+#xa end 'a331';
+#xa prepare 'a331';
+#--echo expect a331
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#insert into t11(b) values(1),(2),(3);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a332';
+#insert into t11(b) values(4);
+#insert into t1(b) values(11);
+#update t1 set b=b+1 where a=1;
+#delete from t1 where a=2;
+#xa end 'a332';
+#xa prepare 'a332';
+#--echo expect a332
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#insert into t11(b) values(1),(2),(3);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a34';
+#delete from t11 where a=2;
+#update t11 set b=b+1 where a=1;
+#update t1 set b=b+1 where a=1;
+#delete from t1 where a=2;
+#xa end 'a34';
+#xa prepare 'a34';
+#--echo expect a34
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#insert into t11(b) values(1),(2),(3);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a333';
+#update t11 set b=b+1 where a=1;
+#insert into t1(b) values(11);
+#xa end 'a333';
+#xa prepare 'a333';
+#--echo expect a333
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#insert into t11(b) values(1),(2),(3);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a334';
+#update t11 set b=b+1 where a=1;
+#insert into t1(b) values(11);
+#update t1 set b=b+1 where a=1;
+#delete from t1 where a=2;
+#xa end 'a334';
+#xa prepare 'a334';
+#--echo expect a334
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#insert into t11(b) values(1),(2),(3);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a35';
+#insert into t11(b) values(4);
+#update t11 set b=b+1 where a=2;
+#insert into t1(b) values(11);
+#xa end 'a35';
+#xa prepare 'a35';
+#--echo expect a35
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#insert into t11(b) values(1),(2),(3);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a351';
+#insert into t11(b) values(4);
+#update t11 set b=b+1 where a=2;
+#update t1 set b=b+1 where a=1;
+#delete from t1 where a=2;
+#xa end 'a351';
+#xa prepare 'a351';
+#--echo expect a351
+#xa recover;
+#
+#create temporary table tt1(a serial primary key, b int);
+#insert into t11(b) values(1),(2),(3);
+#set session debug="+d,crash_commit_after_log";
+#xa start 'a352';
+#insert into t11(b) values(4);
+#update t11 set b=b+1 where a=2;
+#insert into t1(b) values(11);
+#update t1 set b=b+1 where a=1;
+#delete from t1 where a=2;
+#xa end 'a352';
+#xa prepare 'a352';
+#--echo expect a352
+#xa recover;
+#xa commit 'a352';
+#
+#set global super_read_only=false;
+#set session debug="+d,crash_before_flush_binlog";
+#
+#xa start 'a6';
+#insert into t1(b) values(35);
+#update t1 set b=30 where a=3;
+#xa end 'a6';
+#xa prepare 'a6';
+##expect ER_XA_ROLLING_BACK_XID message in error log
+##expect a6
+#xa recover;
+#
+#

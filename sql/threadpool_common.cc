@@ -29,6 +29,7 @@
 #include "sql/protocol_classic.h"
 #include "sql/sql_parse.h"
 #include "sql/threadpool.h"
+#include "sql/log.h" // sql_print_error
 #include "violite.h"
 
 /* Threadpool parameters */
@@ -39,6 +40,7 @@ uint threadpool_size;
 uint threadpool_stall_limit;
 uint threadpool_max_threads;
 uint threadpool_oversubscribe;
+extern int print_extra_info;
 
 /* Stats */
 TP_STATISTICS tp_stats;
@@ -227,9 +229,34 @@ int threadpool_process_request(THD *thd) {
   */
   for (;;) {
     Vio *vio;
+    const char *query_str = NULL;
     thd_set_net_read_write(thd, 0);
 
-    if ((retval = do_command(thd)) != 0) goto end;
+    if ((retval = do_command(thd)) != 0) {
+      const enum enum_server_command cur_cmd = thd->conn_broken_cmd;
+      const enum enum_server_command cmd = thd->get_command();
+
+      if (print_extra_info && cur_cmd != COM_QUIT &&
+		  !(cur_cmd == COM_END && (cmd == COM_SLEEP || cmd == COM_CONNECT))) {
+        sql_print_error("Command execution(threadpool_process_request->do_command) in thread (%u, %lu) returned error %d when executing command(%d %d), query text: %s. Aborting this connection. Session info: %s.",
+                 thd->thread_id(), thd->real_thread_tid(), retval,
+				 thd->conn_broken_cmd, thd->get_command(),
+                 (query_str= thd->query().str) ? query_str : "<unknown query>",
+                 thd->toString().c_str());
+	  }
+
+      goto end;
+    }
+
+    // If the connection was killed during query handling, error out.
+    if (print_extra_info && !thd_connection_alive(thd)) {
+      char errmsg[2048];
+      snprintf(errmsg, sizeof(errmsg), "Connection killed internally while executing query %s",
+               (query_str= thd->query().str) ? query_str: "<unknown query>");
+      thd->print_aborted_warning(0, errmsg);
+      retval = 1;
+      goto end;
+    }
 
     if (!thd_connection_alive(thd)) {
       retval = 1;

@@ -36,12 +36,17 @@ SET @@GLOBAL.innodb_track_redo_log_now=TRUE;
 
 # Listing .xdb files after the flush.
 # The output must show 6 .xdb files: ib_modified_log_1_0.xdb to ib_modified_log_6_nnn.xdb.
+ib_modified_log_10_<nnn>.xdb
+ib_modified_log_11_<nnn>.xdb
 ib_modified_log_1_<nnn>.xdb
 ib_modified_log_2_<nnn>.xdb
 ib_modified_log_3_<nnn>.xdb
 ib_modified_log_4_<nnn>.xdb
 ib_modified_log_5_<nnn>.xdb
 ib_modified_log_6_<nnn>.xdb
+ib_modified_log_7_<nnn>.xdb
+ib_modified_log_8_<nnn>.xdb
+ib_modified_log_9_<nnn>.xdb
 
 # Purging changed page bitmaps (tracking enabled).
 # All but the last one bitmap file must be deleted
@@ -49,7 +54,7 @@ PURGE CHANGED_PAGE_BITMAPS BEFORE PREVIOUS_LSN;
 
 # Listing .xdb files after the purge (tracking enabled).
 # The output must show only one .xdb file - ib_modified_log_6_nnn.xdb.
-ib_modified_log_6_<nnn>.xdb
+ib_modified_log_11_<nnn>.xdb
 
 # Restarting with redo log tracking disabled.
 # restart:--innodb-data-home-dir=CUSTOM_INNODB_DATA_HOME_DIR --innodb-log-group-home-dir=CUSTOM_INNODB_DATA_HOME_DIR --innodb-file-per-table=0 --datadir=MYSQLD_DATADIR1  --innodb-track-changed-pages=1 --innodb-max-bitmap-file-size=4096 --innodb-track-changed-pages=0
@@ -57,8 +62,8 @@ include/assert.inc [InnoDB redo log tracking must be disabled]
 
 # Listing .xdb files after the restart with tracking disabled.
 # The output must show the same and a new .xdb file: ib_modified_log_6_nnn.xdb and ib_modified_log_7_nnn.xdb.
-ib_modified_log_6_<nnn>.xdb
-ib_modified_log_7_<nnn>.xdb
+ib_modified_log_11_<nnn>.xdb
+ib_modified_log_12_<nnn>.xdb
 
 # Purging changed page bitmaps (tracking disabled).
 # The next-to-last one .xdb file (ib_modified_log_6_nnn.xdb) must be deleted.
@@ -66,7 +71,7 @@ PURGE CHANGED_PAGE_BITMAPS BEFORE PREVIOUS_LSN;
 
 # Listing .xdb files after the purge (tracking disabled).
 # The output must show only the last one .xdb file - ib_modified_log_7_nnn.xdb.
-ib_modified_log_7_<nnn>.xdb
+ib_modified_log_12_<nnn>.xdb
 
 # Dropping the table.
 DROP TABLE t1;

@@ -447,6 +447,14 @@ struct System_variables {
     @sa Sys_var_generated_random_password_length
   */
   uint32_t generated_random_password_length;
+
+  /**
+    dzw:
+	Identify the computing node and global connection id allocated by it.
+	The 2 fields associates connections in storage node and in computing nodes.
+  */
+  uint32_t comp_node_id;
+  uint32_t global_conn_id;
 };
 
 /**

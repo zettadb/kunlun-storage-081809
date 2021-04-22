@@ -8,7 +8,7 @@
 --let grep_pattern = ^# Schema: .+  Last_errno: \d+  Killed: \d+\$
 --let log_expected_matches = $log_slow_verbosity_expected_matches
 --source include/log_grep.inc
---let grep_pattern = ^#.*Rows_affected: \d+\$
+--let grep_pattern = ^#.*Rows_affected: \d+
 --source include/log_grep.inc
 --let grep_pattern = ^# Bytes_sent: \d+.*\$
 --source include/log_grep.inc

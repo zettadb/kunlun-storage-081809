@@ -1,0 +1,190 @@
+#
+# XA transaction binlog recovery test.
+--source include/not_valgrind.inc
+--source include/have_log_bin.inc
+--source include/have_debug.inc
+--source include/have_binlog_format_mixed_or_row.inc
+
+CREATE TABLE t1(c1 INT) ENGINE= InnoDB;
+
+# 1
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--echo # Crash in XA PREPARE right after flushing InnoDB redo log
+XA START '1';
+INSERT INTO t1 VALUES(1);
+XA END '1';
+XA PREPARE '1';
+
+--connect (conn2, 127.0.0.1, root, , test, $MASTER_MYPORT,)
+--connection conn2
+flush logs;
+
+XA START '11';
+INSERT INTO t1 VALUES(1);
+XA END '11';
+XA PREPARE '11';
+
+--connect (conn3, 127.0.0.1, root, , test, $MASTER_MYPORT,)
+--connection conn3
+flush logs;
+
+SET SESSION DEBUG="+d,crash_after_flush_engine_log";
+XA START '111';
+INSERT INTO t1 VALUES(1);
+XA END '111';
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA PREPARE '111';
+--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+show binary logs;
+--echo #expect XA_PREPARED_LIST '1','11'.
+show binlog events in 'binlog.000004';
+--echo #
+--echo # XA txn '111' should be aborted during binlog recovery, XA txn '1' and '11' should be left prepared.
+XA RECOVER;
+
+XA COMMIT '11';
+--let $assert_text= Table t1 must contain 1 row 1
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=1] = 1
+--source include/assert.inc
+
+SET SESSION DEBUG="+d,crash_after_flush_binlog";
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA COMMIT '1';
+
+#--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+show binary logs;
+--echo #expect empty XA_PREPARED_LIST.
+show binlog events in 'binlog.000005';
+--echo #
+--echo # XA txn '1' should be committed during binlog recovery.
+--echo # No prepared XA txn expected
+XA RECOVER;
+
+--let $assert_text= Table t1 must contain 2 rows of 1
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=1] = 2
+--source include/assert.inc
+select*from t1;
+
+
+# 5
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--echo # Crash in XA PREPARE right after flushing binlog
+XA START '5';
+INSERT INTO t1 VALUES(5);
+XA END '5';
+XA PREPARE '5';
+--connect (conn4, 127.0.0.1, root, , test, $MASTER_MYPORT,)
+--connection conn4
+flush logs;
+
+XA START '55';
+INSERT INTO t1 VALUES(5);
+XA END '55';
+XA PREPARE '55';
+--connect (conn5, 127.0.0.1, root, , test, $MASTER_MYPORT,)
+--connection conn5
+flush logs;
+
+SET SESSION DEBUG="+d,crash_after_flush_binlog";
+XA START '555';
+INSERT INTO t1 VALUES(5);
+XA END '555';
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA PREPARE '555';
+
+#--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+show binary logs;
+--echo #expect XA_PREPARED_LIST '5','55', '555.
+show binlog events in 'binlog.000008';
+--echo #
+--echo # XA txn '5','55','555' should be left prepared during binlog recovery.
+XA RECOVER;
+
+--let $assert_text= Table t1 must not contain 5
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=5] = 0
+--source include/assert.inc
+XA COMMIT '5';
+--let $assert_text= Table t1 must contain 1 row of 5
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=5] = 1
+--source include/assert.inc
+
+SET SESSION DEBUG="+d,crash_after_flush_engine_log";
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA COMMIT '55';
+
+#--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+
+show binary logs;
+--echo #expect XA_PREPARED_LIST '55', '555.
+show binlog events in 'binlog.000009';
+--echo #
+--echo # XA txn '55' and '555' should be left prepared during binlog recovery.
+XA RECOVER;
+
+--let $assert_text= Table t1 must contain 1 row of 5
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=5] = 1
+--source include/assert.inc
+
+
+XA COMMIT '55';
+--let $assert_text= Table t1 must contain 2 rows of 5
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=5] = 2
+--source include/assert.inc
+
+SET SESSION DEBUG="+d,crash_after_flush_binlog";
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA COMMIT '555';
+
+#--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+
+show binary logs;
+--echo #expect empty XA_PREPARED_LIST
+show binlog events in 'binlog.000010';
+--echo #
+--echo # expect no prepared XA txns
+XA RECOVER;
+
+--let $assert_text= Table t1 must contain 3 rows of 5
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=5] = 3
+--source include/assert.inc
+DROP TABLE t1;

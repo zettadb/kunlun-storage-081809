@@ -811,7 +811,6 @@ class Slave_worker : public Relay_log_info {
       }
     }
     rli_description_event = fdle;
-
     return 0;
   }
 

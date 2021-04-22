@@ -1,0 +1,14 @@
+--let $rpl_gtid_utils=1
+--source include/master-slave.inc 
+
+--let $rpl_gtid_mode=ON
+--let $rpl_set_enforce_gtid_consistency=1
+--source include/rpl_set_gtid_mode.inc
+
+--source extra/rpl_tests/rpl_xa_trx_boundary_parser.inc
+
+--let $rpl_gtid_mode=OFF
+--let $rpl_set_enforce_gtid_consistency=0
+--source include/rpl_set_gtid_mode.inc
+
+--source include/rpl_end.inc

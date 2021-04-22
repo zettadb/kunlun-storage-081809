@@ -80,24 +80,24 @@ test_log WHERE (argument LIKE '%BY %' OR argument LIKE '%AS %'
                 OR argument LIKE '%PASSWORD %')
 AND argument NOT LIKE '%Prepare%';
 TRIM(LEADING '\t' FROM MID(argument,LOCATE('Query',argument)+5))
-CREATE USER 'test_user1'@'%' IDENTIFIED WITH 'mysql_native_password' BY <secret>
-CREATE USER 'test_user3'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY <secret> REQUIRE SSL
-ALTER USER 'test_user3'@'localhost' IDENTIFIED BY <secret> REQUIRE X509 WITH MAX_QUERIES_PER_HOUR 1 MAX_UPDATES_PER_HOUR 2 MAX_CONNECTIONS_PER_HOUR 3 MAX_USER_CONNECTIONS 4
-CREATE USER 'test_user2'@'%' IDENTIFIED WITH 'mysql_native_password' BY <secret>
-CHANGE MASTER TO MASTER_PASSWORD = <secret>
-ALTER USER 'test_user4'@'localhost' IDENTIFIED BY <secret>
-CREATE USER 'test_user5'@'%' IDENTIFIED WITH 'mysql_native_password' AS '*67092806AE91BFB6BE72DE6C7BE2B7CCA8CFA9DF','test_user6'@'%' IDENTIFIED BY <secret>
-ALTER USER IF EXISTS 'test_user5'@'%' IDENTIFIED BY <secret>,'test_user6'@'%' IDENTIFIED WITH 'mysql_native_password' AS '*67092806AE91BFB6BE72DE6C7BE2B7CCA8CFA9DF','test_user7'@'%' IDENTIFIED BY <secret>
-CREATE USER IF NOT EXISTS 'test_user6'@'%' IDENTIFIED BY <secret>,'test_user7'@'%' IDENTIFIED BY <secret>
+CREATE USER 'test_user1'@'%' IDENTIFIED WITH 'mysql_native_password' BY <secret>	 
+CREATE USER 'test_user3'@'localhost' IDENTIFIED WITH 'mysql_native_password' BY <secret> REQUIRE SSL	 
+ALTER USER 'test_user3'@'localhost' IDENTIFIED BY <secret> REQUIRE X509 WITH MAX_QUERIES_PER_HOUR 1 MAX_UPDATES_PER_HOUR 2 MAX_CONNECTIONS_PER_HOUR 3 MAX_USER_CONNECTIONS 4	 
+CREATE USER 'test_user2'@'%' IDENTIFIED WITH 'mysql_native_password' BY <secret>	 
+CHANGE MASTER TO MASTER_PASSWORD = <secret>	 
+ALTER USER 'test_user4'@'localhost' IDENTIFIED BY <secret>	 
+CREATE USER 'test_user5'@'%' IDENTIFIED WITH 'mysql_native_password' AS '*67092806AE91BFB6BE72DE6C7BE2B7CCA8CFA9DF','test_user6'@'%' IDENTIFIED BY <secret>	 
+ALTER USER IF EXISTS 'test_user5'@'%' IDENTIFIED BY <secret>,'test_user6'@'%' IDENTIFIED WITH 'mysql_native_password' AS '*67092806AE91BFB6BE72DE6C7BE2B7CCA8CFA9DF','test_user7'@'%' IDENTIFIED BY <secret>	 
+CREATE USER IF NOT EXISTS 'test_user6'@'%' IDENTIFIED BY <secret>,'test_user7'@'%' IDENTIFIED BY <secret>	 
 ALTER USER test_user7 IDENTIFIED WITH mysql_native_password AS
-CREATE USER 'test_user8'@'%' IDENTIFIED BY <secret>
-ALTER USER 'test_user8'@'%' IDENTIFIED BY <secret>
-CREATE USER 'test_user9'@'%' IDENTIFIED WITH 'caching_sha2_password' BY <secret>
-ALTER USER 'test_user9'@'%' IDENTIFIED WITH 'caching_sha2_password' BY <secret>
-SET PASSWORD FOR `test_user9`@`%`=<secret>
-SET PASSWORD FOR `u1`@`%`=<secret> REPLACE <secret>
-ALTER USER 'u1'@'%' IDENTIFIED BY <secret> REPLACE <secret>,'u2'@'%' IDENTIFIED BY <secret> PASSWORD REQUIRE CURRENT OPTIONAL
-ALTER USER 'u2'@'%' IDENTIFIED BY <secret>,'u1'@'%' IDENTIFIED BY <secret> REPLACE <secret>
+CREATE USER 'test_user8'@'%' IDENTIFIED BY <secret>	 
+ALTER USER 'test_user8'@'%' IDENTIFIED BY <secret>	 
+CREATE USER 'test_user9'@'%' IDENTIFIED WITH 'caching_sha2_password' BY <secret>	 
+ALTER USER 'test_user9'@'%' IDENTIFIED WITH 'caching_sha2_password' BY <secret>	 
+SET PASSWORD FOR `test_user9`@`%`=<secret>	 
+SET PASSWORD FOR `u1`@`%`=<secret> REPLACE <secret>	 
+ALTER USER 'u1'@'%' IDENTIFIED BY <secret> REPLACE <secret>,'u2'@'%' IDENTIFIED BY <secret> PASSWORD REQUIRE CURRENT OPTIONAL	 
+ALTER USER 'u2'@'%' IDENTIFIED BY <secret>,'u1'@'%' IDENTIFIED BY <secret> REPLACE <secret>	 
 ------ from table ------
 SELECT argument FROM mysql.general_log WHERE (argument LIKE '%BY %' OR
 argument LIKE '%AS %' OR argument LIKE '%PASSWORD %')

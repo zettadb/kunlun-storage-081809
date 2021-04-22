@@ -171,7 +171,8 @@ class Sql_cmd_update final : public Sql_cmd_dml {
   bool accept(THD *thd, Select_lex_visitor *visitor) override;
 
  public:
-  List<Item> *update_value_list;
+  List<Item> *update_value_list; // list of right values of all SET clauses.
+  List<Item> returning_list; // list of items in returning clause
 };
 
 #endif /* SQL_UPDATE_INCLUDED */

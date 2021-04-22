@@ -60,9 +60,9 @@ command_type	Connect
 argument	rootssl@santa.claus.ipv4.example.com on test using SSL/TLS
 select substring(argument, locate("Connect", argument)) from test_log
 where argument like "%Connect%on test%";
-substring(argument, locate("Connect", argument))	Connect	root@localhost on test using Socket
-substring(argument, locate("Connect", argument))	Connect	root@santa.claus.ipv4.example.com on test using TCP/IP
-substring(argument, locate("Connect", argument))	Connect	rootssl@santa.claus.ipv4.example.com on test using SSL/TLS
+substring(argument, locate("Connect", argument))	Connect	root@localhost on test using Socket	 
+substring(argument, locate("Connect", argument))	Connect	root@santa.claus.ipv4.example.com on test using TCP/IP	 
+substring(argument, locate("Connect", argument))	Connect	rootssl@santa.claus.ipv4.example.com on test using SSL/TLS	 
 DROP TABLE test_log;
 SET GLOBAL general_log_file=  @old_general_log_file;
 SET GLOBAL general_log=       @old_general_log;

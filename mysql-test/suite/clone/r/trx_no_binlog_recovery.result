@@ -1,0 +1,60 @@
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+create table t1(a int);
+xa start 'a1';
+insert into t1 values(1);
+xa end 'a1';
+# Adding debug point 'crash_before_engine_commit' to @@GLOBAL.debug
+xa commit 'a1' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart: --skip-log-bin
+#expect no txn
+xa recover;
+formatID	gtrid_length	bqual_length	data
+# restart
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+xa start 'a2';
+insert into t1 values(2);
+xa end 'a2';
+# Adding debug point 'crash_before_engine_commit' to @@GLOBAL.debug
+xa prepare 'a2';
+ERROR HY000: Lost connection to MySQL server during query
+# restart: --skip-log-bin
+#expect 1 txn
+xa recover;
+formatID	gtrid_length	bqual_length	data
+1	2	0	a2
+xa commit 'a2';
+# restart
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+select*from t1;
+a
+2
+begin;
+insert into t1 values(3);
+# Adding debug point 'crash_before_engine_commit' to @@GLOBAL.debug
+commit;
+ERROR HY000: Lost connection to MySQL server during query
+# restart: --skip-log-bin
+#don't expect 3
+select*from t1;
+a
+2
+# restart
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+select*from t1;
+a
+2
+# Adding debug point 'crash_before_engine_commit' to @@GLOBAL.debug
+set session autocommit=on;
+insert into t1 values(4);
+ERROR HY000: Lost connection to MySQL server during query
+# restart: --skip-log-bin
+#don't expect 4
+select*from t1;
+a
+2
+# restart
+select*from t1;
+a
+2
+drop table t1;

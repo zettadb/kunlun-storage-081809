@@ -942,7 +942,7 @@ void warn_about_deprecated_binary(THD *thd)
 %token  REAL_SYM                      /* SQL-2003-R */
 %token<lexer.keyword> REBUILD_SYM
 %token<lexer.keyword> RECOVER_SYM
-%token  OBSOLETE_TOKEN_693            /* was: REDOFILE_SYM */
+%token  RETURNING_SYM            /* was: REDOFILE_SYM */
 %token<lexer.keyword> REDO_BUFFER_SIZE_SYM
 %token<lexer.keyword> REDUNDANT_SYM
 %token  REFERENCES                    /* SQL-2003-R */
@@ -1426,7 +1426,7 @@ void warn_about_deprecated_binary(THD *thd)
         expr_list udf_expr_list opt_udf_expr_list opt_expr_list select_item_list
         opt_paren_expr_list ident_list_arg ident_list values opt_values row_value fields
         fields_or_vars
-        opt_field_or_var_spec
+        opt_field_or_var_spec returning_clause returning_item_list
 
 %type <var_type>
         option_type opt_var_type opt_var_ident_type opt_set_var_ident_type
@@ -9422,6 +9422,28 @@ locked_row_action:
         | NOWAIT_SYM { $$= Locked_row_action::NOWAIT; }
         ;
 
+returning_item_list:
+          returning_item_list ',' select_item
+          {
+            if ($1 == NULL || $1->push_back($3))
+              MYSQL_YYABORT;
+            $$= $1;
+          }
+        | select_item
+          {
+            $$= NEW_PTN PT_returning_item_list;
+            if ($$ == NULL || $$->push_back($1))
+              MYSQL_YYABORT;
+          }
+        | '*'
+          {
+            Item *item= NEW_PTN Item_field(@$, NULL, NULL, "*");
+            $$= NEW_PTN PT_returning_item_list;
+            if ($$ == NULL || $$->push_back(item))
+              MYSQL_YYABORT;
+          }
+        ;
+
 select_item_list:
           select_item_list ',' select_item
           {
@@ -12533,9 +12555,20 @@ update_stmt:
           opt_where_clause      /* #7 */
           opt_order_clause      /* #8 */
           opt_simple_limit      /* #9 */
+          returning_clause
           {
             $$= NEW_PTN PT_update($1, $2, $3, $4, $5, $7.column_list, $7.value_list,
-                                  $8, $9, $10);
+                                  $8, $9, $10, $11);
+          }
+        ;
+returning_clause:
+         /* EMPTY */
+         {
+             $$ = NULL;
+         }
+        | RETURNING_SYM returning_item_list
+          {
+              $$ = $2;
           }
         ;
 
@@ -12589,8 +12622,9 @@ delete_stmt:
           opt_where_clause
           opt_order_clause
           opt_simple_limit
+          returning_clause
           {
-            $$= NEW_PTN PT_delete($1, $2, $3, $5, $6, $7, $8, $9, $10);
+            $$= NEW_PTN PT_delete($1, $2, $3, $5, $6, $7, $8, $9, $10, $11);
           }
         | opt_with_clause
           DELETE_SYM
@@ -12599,8 +12633,9 @@ delete_stmt:
           FROM
           table_reference_list
           opt_where_clause
+          returning_clause
           {
-            $$= NEW_PTN PT_delete($1, $2, $3, $4, $6, $7);
+            $$= NEW_PTN PT_delete($1, $2, $3, $4, $6, $7, $8);
           }
         | opt_with_clause
           DELETE_SYM
@@ -12610,8 +12645,9 @@ delete_stmt:
           USING
           table_reference_list
           opt_where_clause
+          returning_clause
           {
-            $$= NEW_PTN PT_delete($1, $2, $3, $5, $7, $8);
+            $$= NEW_PTN PT_delete($1, $2, $3, $5, $7, $8, $9);
           }
         ;
 
@@ -16823,6 +16859,11 @@ xa:
           {
             Lex->sql_command = SQLCOM_XA_RECOVER;
             Lex->m_sql_cmd= NEW_PTN Sql_cmd_xa_recover($3);
+          }
+        | XA_SYM RECOVER_SYM xid
+          {
+            Lex->sql_command = SQLCOM_XA_RECOVER;
+            Lex->m_sql_cmd= new (YYTHD->mem_root) Sql_cmd_xa_recover($3);
           }
         ;
 

@@ -1,0 +1,44 @@
+CREATE TABLE t1 (c1 INT);
+XA START 'trx1';
+INSERT INTO t1 VALUES (1);
+XA END 'trx1';
+XA PREPARE 'trx1';
+set session debug_sync="bgc_after_sync_stage_before_commit_stage WAIT_FOR continue_commit NO_CLEAR_EVENT";
+XA COMMIT 'trx1';
+set session debug_sync="bgc_after_sync_stage_before_commit_stage WAIT_FOR continue_commit NO_CLEAR_EVENT";
+XA START 'trx2';
+INSERT INTO t1 VALUES (2);
+XA END 'trx2';
+XA COMMIT 'trx2' ONE PHASE;
+set session debug_sync="bgc_after_sync_stage_before_commit_stage WAIT_FOR continue_commit NO_CLEAR_EVENT";
+INSERT INTO t1 VALUES (3);
+set session debug_sync="bgc_after_sync_stage_before_commit_stage WAIT_FOR continue_commit NO_CLEAR_EVENT";
+begin;
+INSERT INTO t1 VALUES (4);
+commit;
+set global multi_purpose_int = 0;
+set session debug="+d,count_trx_commit_waits_at_rotation";
+flush logs;
+SELECT @@global.multi_purpose_int as num_waits;
+num_waits
+4
+include/assert.inc [flush log must wait 4 txn commits.]
+set session debug_sync="now SIGNAL continue_commit";
+set session debug_sync="now SIGNAL conn1_done";
+set session debug_sync="now SIGNAL conn2_done";
+set session debug_sync="now SIGNAL conn3_done";
+set session debug_sync="now SIGNAL conn4_done";
+set session debug_sync="now WAIT_FOR conn1_done ";
+set session debug_sync="now WAIT_FOR conn2_done ";
+set session debug_sync="now WAIT_FOR conn3_done ";
+set session debug_sync="now WAIT_FOR conn4_done ";
+select*from t1 order by c1;
+c1
+1
+2
+3
+4
+include/assert.inc [t1 must contain 4 rows.]
+set session debug_sync="reset";
+set global multi_purpose_int = 0;
+drop table t1;

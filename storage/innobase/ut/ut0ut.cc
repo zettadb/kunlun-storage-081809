@@ -60,7 +60,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "sql/derror.h"
 
 namespace ut {
-ulong spin_wait_pause_multiplier = 50;
+ulong spin_wait_pause_multiplier = 5; // official code was: 50
 }
 
 /** Returns system time. We do not specify the format of the time returned:

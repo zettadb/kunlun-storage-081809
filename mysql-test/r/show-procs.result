@@ -1,0 +1,4 @@
+show processlist;
+Id	User	Host	db	Command	Time	State	Info	Rows_sent	Rows_examined	pthread_id	thread_tid	global_conn_id	comp_node_id
+4	event_scheduler	localhost	NULL	Daemon	3	Waiting on empty queue	NULL	0	0	0	0	0	0
+12	root	localhost	test	Query	0	starting	show processlist	0	0	0	0	0	0

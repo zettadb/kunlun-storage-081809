@@ -175,6 +175,9 @@ PSI_memory_key key_memory_Rows_query_log_event_rows_query;
 using std::max;
 using std::min;
 
+#define IS_DDL_STMT(sqlcmd) \
+    ((sql_command_flags[(sqlcmd)] & (CF_DISALLOW_IN_RO_TRANS | CF_AUTO_COMMIT_TRANS)) == (CF_DISALLOW_IN_RO_TRANS | CF_AUTO_COMMIT_TRANS))
+
 /**
   BINLOG_CHECKSUM variable.
 */
@@ -182,6 +185,8 @@ const char *binlog_checksum_type_names[] = {"NONE", "CRC32", NullS};
 
 unsigned int binlog_checksum_type_length[] = {sizeof("NONE") - 1,
                                               sizeof("CRC32") - 1, 0};
+int print_extra_info = 0;
+//extern Gtid_table_persistor *gtid_table_persistor;
 
 TYPELIB binlog_checksum_typelib = {
     array_elements(binlog_checksum_type_names) - 1, "",
@@ -3627,7 +3632,9 @@ bool Query_log_event::write(Basic_ostream *ostream) {
 Query_log_event::Query_log_event()
     : binary_log::Query_event(),
       Log_event(header(), footer()),
-      data_buf(nullptr) {}
+      data_buf(nullptr) {
+  slave_proxy_id= 0;
+}
 
 /**
   Returns true when the lex context determines an atomic DDL.
@@ -3783,6 +3790,11 @@ Query_log_event::Query_log_event(THD *thd_arg, const char *query_arg,
   /* save the original thread id; we already know the server id */
   slave_proxy_id = thd_arg->variables.pseudo_thread_id;
   common_header->set_is_valid(query != 0);
+
+  if (query != 0 &&
+      (IS_DDL_STMT(thd_arg->lex->sql_command))) {
+    header()->flags |= LOG_EVENT_DDL_F;
+  }
 
   /*
   exec_time calculation has changed to use the same method that is used
@@ -4125,9 +4137,10 @@ void Query_log_event::print_query_header(
       longlong10_to_str(ddl_xid, xid_buf + strlen(xid_assign), 10);
     }
     print_header(file, print_event_info, false);
-    my_b_printf(file, "\t%s\tthread_id=%lu\texec_time=%lu\terror_code=%d%s\n",
+    my_b_printf(file, "\t%s\tthread_id=%lu\texec_time=%lu\terror_code=%d%s%s\n",
                 get_type_str(), (ulong)thread_id, (ulong)exec_time, error_code,
-                xid_buf);
+                xid_buf,
+                ((header()->flags & LOG_EVENT_DDL_F) && print_extra_info > 3) ? "\tDDL" : "");
   }
 
   if ((common_header->flags & LOG_EVENT_SUPPRESS_USE_F)) {
@@ -12602,6 +12615,11 @@ Gtid_log_event::Gtid_log_event(THD *thd_arg, bool using_trans,
                             : Log_event::EVENT_STMT_CACHE,
                 Log_event::EVENT_NORMAL_LOGGING, header(), footer()) {
   DBUG_TRACE;
+
+  if (IS_DDL_STMT(thd_arg->lex->sql_command)) {
+    header()->flags |= LOG_EVENT_DDL_F;
+  }
+
   if (thd->owned_gtid.sidno > 0) {
     spec.set(thd->owned_gtid);
     sid = thd->owned_sid;
@@ -12700,13 +12718,14 @@ void Gtid_log_event::print(FILE *, PRINT_EVENT_INFO *print_event_info) const {
                 "rbr_only=%s\t"
                 "original_committed_timestamp=%llu\t"
                 "immediate_commit_timestamp=%llu\t"
-                "transaction_length=%llu\n",
+                "transaction_length=%llu%s\n",
                 get_type_code() == binary_log::GTID_LOG_EVENT
                     ? "GTID"
                     : "Anonymous_GTID",
                 last_committed, sequence_number,
                 may_have_sbr_stmts ? "no" : "yes", original_commit_timestamp,
-                immediate_commit_timestamp, transaction_length);
+                immediate_commit_timestamp, transaction_length,
+                ((header()->flags & LOG_EVENT_DDL_F) && print_extra_info > 3) ? "\tDDL" : "");
   }
 
   /*
@@ -13075,40 +13094,123 @@ rpl_sidno Gtid_log_event::get_sidno(bool need_lock) {
   return spec.gtid.sidno;
 }
 
+uint Previous_gtids_log_event::Extra_header::serialize(char *buf)
+{
+    char *p = buf;
+    int2store(p, magic);
+    p += 2;
+    int2store(p, flags);
+    p += 2;
+    int4store(p, payload_length);
+    return sizeof(Extra_header);
+}
+
+uint Previous_gtids_log_event::Extra_header::deserialize(const char*buf)
+{
+  const char *p = buf;
+  magic = uint2korr(p);
+  p += 2;
+  flags = uint2korr(p);
+  p += 2;
+  payload_length = uint2korr(p);
+  return sizeof(Extra_header);
+}
+
 Previous_gtids_log_event::Previous_gtids_log_event(
     const char *buf_arg, const Format_description_event *description_event)
     : binary_log::Previous_gtids_event(buf_arg, description_event),
       Log_event(header(), footer()) {
+  m_extra_hdr_ptr = NULL;
   DBUG_TRACE;
+  Sid_map sid_map(nullptr);
+  Gtid_set set(&sid_map, nullptr);
+  size_t endpos = 0;
+  // if working on an old binlog this assert could fail if the PREV-GTIDS is empty.
+  //DBUG_ASSERT(buf_size >= 8/*gtid list min-len*/ + 8/*extra header len*/);
+
+  enum_return_status rets = set.add_gtid_encoding(buf, buf_size, &endpos);
+  const uint gtid_encode_len = set.get_encoded_length();
+  if (rets == RETURN_STATUS_OK)
+  {
+    if (endpos < buf_size)
+    {
+      m_extra_hdr.deserialize((const char *)(buf + gtid_encode_len));
+      DBUG_ASSERT(endpos == gtid_encode_len);
+      m_extra_hdr_ptr = const_cast<char *>((const char *)(buf + gtid_encode_len));
+    } else {
+      DBUG_ASSERT(endpos == buf_size);
+      m_extra_hdr.flags |= Extra_header::OLD_OFFICIAL_FORMAT;
+    }
+  } else
+    DBUG_ASSERT(false);
 }
 
 #ifdef MYSQL_SERVER
-Previous_gtids_log_event::Previous_gtids_log_event(const Gtid_set *set)
+Previous_gtids_log_event::Previous_gtids_log_event(const Gtid_set *set, const std::string *xa_prepared_ids)
     : binary_log::Previous_gtids_event(),
       Log_event(header(), footer(), Log_event::EVENT_NO_CACHE,
                 Log_event::EVENT_IMMEDIATE_LOGGING) {
   DBUG_TRACE;
+  m_extra_hdr_ptr = NULL;
   common_header->type_code = binary_log::PREVIOUS_GTIDS_LOG_EVENT;
   common_header->flags |= LOG_EVENT_IGNORABLE_F;
   set->get_sid_map()->get_sid_lock()->assert_some_lock();
-  buf_size = set->get_encoded_length();
+ 
+  const uint gtid_encode_len = set->get_encoded_length(); 
+  buf_size = gtid_encode_len + EXTRA_HEADER_SIZE;
+  DBUG_ASSERT(m_extra_hdr.payload_length == 0);
+
+  if (xa_prepared_ids && xa_prepared_ids->length() > 0)
+  {
+    m_extra_hdr.flags |= Extra_header::HAS_XA_PREPARED_TXNS;
+    m_extra_hdr.payload_length = Extra_header::XA_PREPARED_IDS_HDRSZ +
+        xa_prepared_ids->length() + 1;
+    buf_size += m_extra_hdr.payload_length;
+  }
+
   uchar *buffer =
       (uchar *)my_malloc(key_memory_log_event, buf_size, MYF(MY_WME));
   if (buffer != nullptr) {
     set->encode(buffer);
+    uchar *pbuf = buffer + gtid_encode_len;
+    pbuf += m_extra_hdr.serialize((char*)pbuf);
+
+    if (xa_prepared_ids && xa_prepared_ids->length() > 0)
+    {
+      int4store(pbuf, xa_prepared_ids->length() + 1);
+      pbuf += Extra_header::XA_PREPARED_IDS_HDRSZ;//4
+      memcpy(pbuf, xa_prepared_ids->c_str(), xa_prepared_ids->length() + 1);
+    }
+
     register_temp_buf((char *)buffer);
   }
   buf = buffer;
+  m_extra_hdr_ptr = (char *)(buffer + gtid_encode_len);
   // if buf is empty, is_valid will be false
   common_header->set_is_valid(buf != 0);
 }
 
 int Previous_gtids_log_event::pack_info(Protocol *protocol) {
   size_t length = 0;
+
   char *str = get_str(&length, &Gtid_set::default_string_format);
-  if (str == nullptr) return 1;
-  protocol->store_string(str, length, &my_charset_bin);
-  my_free(str);
+  std::string fstr;
+  if (str != nullptr)
+  {
+    fstr = std::string(str, length);
+    my_free(str);
+  }
+
+  if (m_extra_hdr.flags & Extra_header::HAS_XA_PREPARED_TXNS)
+  {
+    // the XA-PREPARED-LIST string is null-terminated.
+    fstr += "\tXA-PREPARED: ";
+    fstr += std::string(m_extra_hdr_ptr + EXTRA_HEADER_SIZE +
+        Extra_header::XA_PREPARED_IDS_HDRSZ,
+        uint4korr(m_extra_hdr_ptr + EXTRA_HEADER_SIZE) - 1);
+  }
+
+  protocol->store_string(fstr.c_str(), fstr.length(), &my_charset_bin);
   return 0;
 }
 #endif  // MYSQL_SERVER
@@ -13126,6 +13228,10 @@ void Previous_gtids_log_event::print(FILE *,
     my_b_printf(head, "%s\n", str);
     my_free(str);
   }
+
+  if (m_extra_hdr.flags & Extra_header::HAS_XA_PREPARED_TXNS)
+    my_b_printf(head, "# XA-PREPARED: %s\n", m_extra_hdr_ptr + EXTRA_HEADER_SIZE +
+        Extra_header::XA_PREPARED_IDS_HDRSZ);
 }
 #endif
 

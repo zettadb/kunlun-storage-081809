@@ -1050,6 +1050,7 @@ void end_connection(THD *thd) {
           sctx->host_or_ip().str,
           (thd->get_stmt_da()->is_error() ? thd->get_stmt_da()->message_text()
                                           : ER_DEFAULT(ER_UNKNOWN_ERROR)));
+      thd->print_aborted_warning(1, ER_THD(thd, ER_UNKNOWN_ERROR));
     }
   }
 }
@@ -1130,6 +1131,14 @@ static void prepare_new_connection_state(THD *thd) {
                   thd->db().str ? thd->db().str : "unconnected", user,
                   sctx->host_or_ip().str, what, da->mysql_errno(),
                   da->message_text());
+      {    
+        char errbuf[2048];
+        snprintf(errbuf, sizeof(errbuf),
+                 "init_connect command in thread (%u, %u) failed with error %s",
+                 thd->thread_id(), thd->real_thread_tid(),
+			     thd->get_stmt_da()->message_text());
+        thd->print_aborted_warning(1, errbuf);
+      }
 
       thd->lex->set_current_select(0);
       my_net_set_read_timeout(net, thd->variables.net_wait_timeout);
@@ -1191,6 +1200,8 @@ void close_connection(THD *thd, uint sql_errno, bool server_shutdown,
 
   if (sql_errno) net_send_error(thd, sql_errno, ER_DEFAULT_NONCONST(sql_errno));
   thd->disconnect(server_shutdown);
+  thd->print_aborted_warning((sql_errno ? 0 : 2),
+    sql_errno ? ER_DEFAULT(sql_errno) : "CLOSE_CONNECTION");
 
   if (generate_event) {
     mysql_audit_notify(thd, AUDIT_EVENT(MYSQL_AUDIT_CONNECTION_DISCONNECT),

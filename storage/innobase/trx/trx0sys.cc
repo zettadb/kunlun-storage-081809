@@ -55,7 +55,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 
 /** The transaction system */
 trx_sys_t *trx_sys = NULL;
-
+extern ulint srv_num_recovered_txns;
 /** Check whether transaction id is valid.
 @param[in]	id	transaction id to check
 @param[in]	name	table name */
@@ -527,7 +527,7 @@ purge_pq_t *trx_sys_init_at_db_start(void) {
   }
 
   trx_sys->found_prepared_trx = trx_sys->n_prepared_trx > 0;
-
+  srv_num_recovered_txns = trx_sys->n_prepared_trx;
   trx_sys_mutex_exit();
 
   return (purge_queue);

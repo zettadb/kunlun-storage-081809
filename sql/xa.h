@@ -129,7 +129,12 @@ class Sql_cmd_xa_prepare : public Sql_cmd {
 class Sql_cmd_xa_recover : public Sql_cmd {
  public:
   explicit Sql_cmd_xa_recover(bool print_xid_as_hex)
-      : m_print_xid_as_hex(print_xid_as_hex) {}
+  : m_print_xid_as_hex(print_xid_as_hex), m_xid(NULL)
+  {}
+
+  explicit Sql_cmd_xa_recover(xid_t *xid)
+  : m_print_xid_as_hex(false), m_xid(xid)
+  {}
 
   virtual enum_sql_command sql_command_code() const {
     return SQLCOM_XA_RECOVER;
@@ -142,6 +147,7 @@ class Sql_cmd_xa_recover : public Sql_cmd {
   bool trans_xa_recover(THD *thd);
 
   bool m_print_xid_as_hex;
+  xid_t *m_xid;
 };
 
 class XID_STATE;
@@ -313,6 +319,16 @@ typedef struct xid_t {
     return serialize_xid(buf, formatID, gtrid_length, bqual_length, data);
   }
 
+  /**
+    Set fields with serialized string stored in buf.
+    @retval true buf format error;
+            false success.
+  */
+  bool deserialize(const char *buf)
+  {
+    return deserialize_xid(buf, formatID, gtrid_length, bqual_length, data);
+  }
+
 #ifndef DBUG_OFF
   /**
      Get printable XID value.
@@ -354,8 +370,11 @@ struct st_handler_tablename;
 */
 typedef struct st_xarecover_txn {
   XID id;
+  bool one_phase_prepared;
   List<st_handler_tablename> *mod_tables;
 } XA_recover_txn;
+
+typedef std::list<XA_recover_txn> XA_recover_txn_list;
 
 class XID_STATE {
  public:
@@ -365,6 +384,19 @@ class XID_STATE {
     XA_IDLE,
     XA_PREPARED,
     XA_ROLLBACK_ONLY
+  };
+
+  enum xa_types {
+    // internal mysql XA txn branch, not an xa txn branch started by 'XA START'
+    XA_INTERNAL,
+    // xa txn branch started by 'xa start'
+    XA_EXTERNAL,
+    // xa txn branch started by 'xa start' but the
+    // XA txn is recovered, not started by current session 
+    XA_EXTERNAL_RECOVERED,
+    // non-xa txns recovered, they only transiently during recovery phase,
+    // they will either be committed or aborted during binlog recovery.
+    XA_INTERNAL_RECOVERED
   };
 
   /**
@@ -397,15 +429,57 @@ class XID_STATE {
     Checked and reset at XA-commit/rollback.
   */
   bool m_is_binlogged;
+  
+  xa_types xa_type;
+
+  mutable char m_xid_str[XID::ser_buf_size + 16];// large enough
 
  public:
   XID_STATE()
       : xa_state(XA_NOTR),
         in_recovery(false),
         rm_error(0),
-        m_is_binlogged(false) {
+        m_is_binlogged(false),
+        xa_type(XA_INTERNAL) {
     m_xid.null();
+    m_xid_str[0] = '\0';
   }
+
+  std::string &to_string(std::string&out) const;
+  void set_xa_type(xa_types t)
+  {
+    xa_type= t;
+  }
+
+  xa_types get_xa_type() const
+  { return xa_type; }
+
+  // all strings must be shorter than 16 bytes.
+  const char *get_xa_type_str() const
+  {
+    const char *res= NULL;
+    switch(xa_type)
+    {
+    case XID_STATE::XA_INTERNAL:
+      res= "internal";
+      break;
+    case XID_STATE::XA_EXTERNAL:
+      res= "external";
+      break;
+    case XID_STATE::XA_EXTERNAL_RECOVERED:
+      res= "external_recvrd";
+      break;
+    case XID_STATE::XA_INTERNAL_RECOVERED:
+      res= "internal_recvrd";
+      break;
+    default:
+      break;
+    }
+    return res;
+  }
+
+  const char *get_xa_xid() const;
+
 
   std::mutex &get_xa_lock() { return m_xa_lock; }
 
@@ -446,6 +520,7 @@ class XID_STATE {
     m_xid.null();
     in_recovery = false;
     m_is_binlogged = false;
+    m_xid_str[0] = '\0';
   }
 
   void start_normal_xa(const XID *xid) {
@@ -454,6 +529,7 @@ class XID_STATE {
     m_xid.set(xid);
     in_recovery = false;
     rm_error = 0;
+    m_xid_str[0] = '\0';
   }
 
   void start_recovery_xa(const XID *xid, bool binlogged_arg = false) {
@@ -462,6 +538,8 @@ class XID_STATE {
     in_recovery = true;
     rm_error = 0;
     m_is_binlogged = binlogged_arg;
+    m_xid_str[0] = '\0';
+    xa_type= XA_EXTERNAL_RECOVERED;
   }
 
   bool is_in_recovery() const { return in_recovery; }
@@ -589,6 +667,9 @@ class Recovered_xa_transactions {
     @return Pointer to a initialized MEM_ROOT.
   */
   MEM_ROOT *get_allocated_memroot();
+
+  void clear();
+  size_t num_entries() const {return m_prepared_xa_trans.size();}
 
  private:
   // Disable direct instantiation. Use the method init() instead.

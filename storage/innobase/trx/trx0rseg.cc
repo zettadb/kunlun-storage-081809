@@ -209,7 +209,7 @@ static void trx_rseg_persist_gtid(trx_rseg_t *rseg, trx_id_t gtid_trx_no) {
       mtr_commit(&mtr);
       break;
     }
-    trx_undo_gtid_read_and_persist(undo_log);
+    trx_undo_gtid_read_and_persist(undo_log, NULL);
 
     /* Move to next node. */
     node_addr = flst_get_next_addr(node, &mtr);

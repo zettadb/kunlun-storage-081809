@@ -44,7 +44,7 @@ if (`SELECT STRCMP('$status_type', '') * STRCMP(UPPER('$status_type'), 'SESSION'
 let $_status_timeout_counter= $status_timeout;
 if (!$_status_timeout_counter)
 {
-  let $_status_timeout_counter= 600;
+  let $_status_timeout_counter= 6000;
 }
 
 let $_status_var_comparsion= $status_var_comparsion;

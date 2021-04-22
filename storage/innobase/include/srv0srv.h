@@ -1392,6 +1392,10 @@ struct export_var_t {
   ulint innodb_encryption_rotation_estimated_iops;
   int64_t innodb_encryption_key_requests;
   int64_t innodb_key_rotation_list_length;
+
+  /* dzw: crash recovery status */
+  ulint innodb_num_aborted_txns_no_gtid;
+  ulint innodb_num_recovered_txns;
 };
 
 #ifndef UNIV_HOTBACKUP

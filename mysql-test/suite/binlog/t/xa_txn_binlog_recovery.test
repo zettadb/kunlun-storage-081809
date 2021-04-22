@@ -1,0 +1,272 @@
+#
+# XA transaction binlog recovery test.
+--source include/not_valgrind.inc
+--source include/have_log_bin.inc
+--source include/have_debug.inc
+--source include/have_binlog_format_mixed_or_row.inc
+
+CREATE TABLE t1(c1 INT) ENGINE= InnoDB;
+
+# 1
+select @@session.gtid_next;
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--echo # Crash in XA PREPARE right after flushing InnoDB redo log
+SET SESSION DEBUG="+d,crash_after_flush_engine_log";
+XA START '1';
+INSERT INTO t1 VALUES(1);
+XA END '1';
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA PREPARE '1';
+--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+--echo #
+--echo # XA txn '1' should be aborted during binlog recovery.
+--echo # no prepared txn expected
+XA RECOVER;
+
+--let $assert_text= Table t1 must not contain 1
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=1] = 0
+--source include/assert.inc
+select*from t1;
+
+# 2
+--echo # Crash in XA COMMIT ONE PHASE right after flushing InnoDB redo log
+SET SESSION DEBUG="+d,crash_after_flush_engine_log";
+XA START '2';
+INSERT INTO t1 VALUES(2);
+XA END '2';
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA COMMIT  '2' ONE PHASE;
+
+#--echo # if manually run, this test case can succeed, but mtr fails at below
+# line, in mtr run mysqld failed to restart after above injected crash somehow.
+# Same for below other ONE PHASE test case.
+
+#--source include/wait_until_disconnected.inc
+--echo # wait for server restart
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+--echo #
+--echo # XA txn '2' should be aborted during binlog recovery.
+--echo # no prepared txn expected
+XA RECOVER;
+
+--let $assert_text= Table t1 must not contain 2
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=2] = 0
+--source include/assert.inc
+select*from t1;
+
+# 3
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--echo # Crash in XA COMMIT right before commit
+XA START '3';
+INSERT INTO t1 VALUES(3);
+XA END '3';
+XA PREPARE '3';
+
+SET SESSION DEBUG="+d,crash_commit_before_log";
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA COMMIT '3';
+
+--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+--echo #
+--echo # XA txn '3' should be left prepared, and its effect should be only visible after it's committed.
+--echo # prepared XA txn '3' expected
+XA RECOVER;
+
+--let $assert_text= Table t1 must not contain 3
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=3] = 0
+--source include/assert.inc
+XA COMMIT '3';
+--let $assert_text= Table t1 must contain 3
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=3] = 1
+--source include/assert.inc
+select*from t1;
+
+
+# 4
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--echo # Crash in XA COMMIT right after engine commit.
+XA START '4';
+delete from t1;
+XA END '4';
+XA PREPARE '4';
+
+SET SESSION DEBUG="+d,crash_commit_after_log";
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA COMMIT '4';
+
+--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+--echo #
+--echo # XA txn '4' should have been committed before the crash.
+--echo # No prepared XA txn expected
+XA RECOVER;
+
+--let $assert_text= Table t1 must not contain 4
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=3] = 0
+--source include/assert.inc
+
+
+
+# 5
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--echo # Crash in XA PREPARE right after flushing binlog
+SET SESSION DEBUG="+d,crash_after_flush_binlog";
+XA START '5';
+INSERT INTO t1 VALUES(5);
+XA END '5';
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA PREPARE '5';
+--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+--echo #
+--echo # XA txn '5' should be left prepared during binlog recovery.
+XA RECOVER;
+
+--let $assert_text= Table t1 must not contain 5
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=5] = 0
+--source include/assert.inc
+XA COMMIT '5';
+--let $assert_text= Table t1 must contain 5
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=5] = 1
+--source include/assert.inc
+
+select*from t1;
+--echo # cleanup t1
+delete from t1;
+
+
+# 6
+--echo # Crash in XA COMMIT ONE PHASE right after flushing binlog
+SET SESSION DEBUG="+d,crash_after_flush_binlog";
+XA START '6';
+INSERT INTO t1 VALUES(6);
+XA END '6';
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA COMMIT  '6' ONE PHASE;
+#--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+--echo #
+--echo # XA txn '6' should be committed during binlog recovery.
+--echo # no prepared txn expected
+XA RECOVER;
+
+--let $assert_text= Table t1 must contain 6
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=6] = 1
+--source include/assert.inc
+
+select*from t1;
+--echo # cleanup t1
+delete from t1;
+
+
+# 7
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--echo # Crash in XA COMMIT right after flushing binlog.
+XA START '7';
+INSERT INTO t1 VALUES(7);
+XA END '7';
+XA PREPARE '7';
+
+SET SESSION DEBUG="+d,crash_after_flush_binlog";
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA COMMIT '7';
+
+--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+--echo #
+--echo # XA txn '7' should be committed during binlog recovery.
+--echo # No prepared XA txn expected
+XA RECOVER;
+
+--let $assert_text= Table t1 must contain 7
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=7] = 1
+--source include/assert.inc
+select*from t1;
+delete from t1;
+
+# 8
+--exec echo "wait" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--echo # Crash in XA ROLLBACK right after flushing binlog
+XA START '8';
+INSERT INTO t1 VALUES(8);
+XA END '8';
+XA PREPARE '8';
+
+SET SESSION DEBUG="+d,crash_after_flush_binlog";
+# 2013 - CR_SERVER_LOST
+--error 2013
+XA ROLLBACK '8';
+
+--source include/wait_until_disconnected.inc
+
+--enable_reconnect
+--echo # Restart the master server
+--exec echo "restart" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+--echo #
+--echo # XA txn '8' should be aborted during binlog recovery.
+--echo # No prepared XA txn expected
+XA RECOVER;
+
+--let $assert_text= Table t1 must contain 8
+--let $assert_cond= [SELECT count(*) FROM t1 WHERE c1=8] = 0
+--source include/assert.inc
+select*from t1;
+
+drop table t1;
+
+# TODO: crash when the 1st(FD), 2nd(PGL), 3rd event(XPL) of a binlog has been written.
+

@@ -1153,7 +1153,11 @@ t1	CREATE TABLE `t1` (
   `INFO` longtext,
   `TIME_MS` bigint(21) NOT NULL DEFAULT '0',
   `ROWS_SENT` bigint(21) unsigned NOT NULL DEFAULT '0',
-  `ROWS_EXAMINED` bigint(21) unsigned NOT NULL DEFAULT '0'
+  `ROWS_EXAMINED` bigint(21) unsigned NOT NULL DEFAULT '0',
+  `PTHREAD_ID` bigint(21) unsigned NOT NULL DEFAULT '0',
+  `THREAD_TID` int(11) unsigned NOT NULL DEFAULT '0',
+  `GLOBAL_CONN_ID` int(11) unsigned NOT NULL DEFAULT '0',
+  `COMP_NODE_ID` int(11) unsigned NOT NULL DEFAULT '0'
 ) ENGINE=TMP_TABLE_ENGINE DEFAULT CHARSET=utf8
 drop table t1;
 create temporary table t1 like information_schema.processlist;
@@ -1170,7 +1174,11 @@ t1	CREATE TEMPORARY TABLE `t1` (
   `INFO` longtext,
   `TIME_MS` bigint(21) NOT NULL DEFAULT '0',
   `ROWS_SENT` bigint(21) unsigned NOT NULL DEFAULT '0',
-  `ROWS_EXAMINED` bigint(21) unsigned NOT NULL DEFAULT '0'
+  `ROWS_EXAMINED` bigint(21) unsigned NOT NULL DEFAULT '0',
+  `PTHREAD_ID` bigint(21) unsigned NOT NULL DEFAULT '0',
+  `THREAD_TID` int(11) unsigned NOT NULL DEFAULT '0',
+  `GLOBAL_CONN_ID` int(11) unsigned NOT NULL DEFAULT '0',
+  `COMP_NODE_ID` int(11) unsigned NOT NULL DEFAULT '0'
 ) ENGINE=TMP_TABLE_ENGINE DEFAULT CHARSET=utf8
 drop table t1;
 create table t1 as select * from information_schema.character_sets;

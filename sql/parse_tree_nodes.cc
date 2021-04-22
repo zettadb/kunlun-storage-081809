@@ -674,7 +674,15 @@ Sql_cmd *PT_delete::make_cmd(THD *thd) {
 
   if (opt_hints != NULL && opt_hints->contextualize(&pc)) return NULL;
 
-  return new (thd->mem_root) Sql_cmd_delete(is_multitable(), &delete_tables);
+  select->parsing_place= CTX_RETURNING_LIST;
+  if (opt_returning_clause && opt_returning_clause->contextualize(&pc))
+    return NULL;
+
+  select->parsing_place= CTX_NONE;
+  Sql_cmd_delete *sql_cmd= new (thd->mem_root) Sql_cmd_delete(is_multitable(), &delete_tables);
+  if (opt_returning_clause)
+    sql_cmd->returning_list= opt_returning_clause->value;
+  return sql_cmd;
 }
 
 Sql_cmd *PT_update::make_cmd(THD *thd) {
@@ -700,6 +708,11 @@ Sql_cmd *PT_update::make_cmd(THD *thd) {
 
   // Ensure we're resetting parsing context of the right select
   DBUG_ASSERT(select->parsing_place == CTX_UPDATE_VALUE);
+
+  select->parsing_place= CTX_RETURNING_LIST;
+  if (opt_returning_clause && opt_returning_clause->contextualize(&pc))
+    return NULL;
+  
   select->parsing_place = CTX_NONE;
   const bool is_multitable = select->table_list.elements > 1;
   lex->sql_command = is_multitable ? SQLCOM_UPDATE_MULTI : SQLCOM_UPDATE;
@@ -730,7 +743,10 @@ Sql_cmd *PT_update::make_cmd(THD *thd) {
 
   if (opt_hints != NULL && opt_hints->contextualize(&pc)) return NULL;
 
-  return new (thd->mem_root) Sql_cmd_update(is_multitable, &value_list->value);
+  Sql_cmd_update *sql_cmd = new (thd->mem_root) Sql_cmd_update(is_multitable, &value_list->value);
+  if (opt_returning_clause)                                                  
+    sql_cmd->returning_list= opt_returning_clause->value;
+  return sql_cmd;
 }
 
 bool PT_insert_values_list::contextualize(Parse_context *pc) {

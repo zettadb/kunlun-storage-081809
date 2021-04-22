@@ -623,6 +623,9 @@ ulong srv_replication_delay = 0;
 
 ulint srv_pass_corrupt_table = 0; /* 0:disable 1:enable */
 
+ulint srv_num_aborted_txns_no_gtid = 0;
+ulint srv_num_recovered_txns = 0;
+
 /*-------------------------------------------*/
 ulong srv_n_spin_wait_rounds = 30;
 ulong srv_spin_wait_delay = 6;
@@ -1871,6 +1874,8 @@ void srv_export_innodb_status(void) {
         srv_stats.key_rotation_list_length;
   }
 
+  export_vars.innodb_num_recovered_txns = srv_num_recovered_txns;
+  export_vars.innodb_num_aborted_txns_no_gtid = srv_num_aborted_txns_no_gtid;
   mutex_exit(&srv_innodb_monitor_mutex);
 }
 

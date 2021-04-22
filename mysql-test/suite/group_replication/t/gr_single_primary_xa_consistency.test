@@ -1,0 +1,361 @@
+###################################################################
+#
+##################################################################
+
+--source include/have_group_replication_plugin.inc
+
+--let $rpl_skip_group_replication_start= 1
+--let $rpl_server_count= 3
+--let $rpl_group_replication_single_primary_mode=1
+--source include/group_replication.inc
+--let crash_after_flush_binlog='crash_after_flush_binlog' # crash_before_engine_commit 
+
+--echo
+--echo # 1. Start GR on server1 & 2
+
+# Boostrap start GR on server1 (Primary)
+--let $rpl_connection_name= server1
+--source include/rpl_connection.inc
+--source include/start_and_bootstrap_group_replication.inc
+--let $_group_replication_local_address_server1= `SELECT @@GLOBAL.group_replication_local_address`
+--let $_group_replication_group_seeds_server1= `SELECT @@GLOBAL.group_replication_group_seeds`
+--let $member1_uuid= query_get_value(SELECT @@SERVER_UUID, @@SERVER_UUID, 1)
+--let $group_name=`SELECT @@GLOBAL.group_replication_group_name`
+
+#--echo "server1: $_group_replication_local_address_server1"
+
+# Start GR on server2 (Secondary)
+--let $rpl_connection_name= server2
+--source include/rpl_connection.inc
+--source include/start_group_replication.inc
+--let $_group_replication_local_address_server2= `SELECT @@GLOBAL.group_replication_local_address`
+--let $_group_replication_group_seeds_server2= `SELECT @@GLOBAL.group_replication_group_seeds`
+#--echo "server2: $_group_replication_local_address_server2"
+
+# Start GR on server3 (Secondary)
+--let $rpl_connection_name= server3
+--source include/rpl_connection.inc
+--source include/start_group_replication.inc
+--let $_group_replication_local_address_server3= `SELECT @@GLOBAL.group_replication_local_address`
+--let $_group_replication_group_seeds_server3= `SELECT @@GLOBAL.group_replication_group_seeds`
+#--echo "server3: $_group_replication_local_address_server3"
+
+
+--echo
+--echo # 2. Add some data to server1
+
+# server1: create table t1 and add data
+--let $rpl_connection_name= server1
+--source include/rpl_connection.inc
+
+CREATE TABLE test.t1 (c1 INT NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+set session debug='+d,crash_after_flush_binlog';
+XA START 'trx1';
+INSERT INTO test.t1 VALUES (1);
+XA END 'trx1';
+--error 2013
+XA PREPARE 'trx1';
+
+--echo # Check that trx1's event group can be received & executed although server1's mysqld crashes at the crash_after_flush_binlog point.
+--let $rpl_connection_name= server2
+--source include/rpl_connection.inc
+--let $wait_binlog_event= XA PREPARE
+--echo #wait until server2 executes the 'XA PREPARE' event.
+--source include/wait_for_binlog_event.inc
+XA RECOVER;
+#show binlog events;
+--let $rpl_connection_name= server3
+--source include/rpl_connection.inc
+--let $wait_binlog_event= XA PREPARE
+--echo #wait until server2 executes the 'XA PREPARE' event.
+--source include/wait_for_binlog_event.inc
+XA RECOVER;
+#show binlog events;
+
+--echo # Restart server1
+--let $rpl_connection_name= server1
+--source include/rpl_connection.inc
+# must immediately restart server1, can't wait too long otherwise if don't restart, or restart
+# after wait ops, the test case will be quit by the mtr test framework.
+--enable_reconnect
+--exec echo "restart:--group_replication_local_address=$_group_replication_local_address_server1 --group_replication_group_seeds=$_group_replication_group_seeds_server1" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+
+# Wait for each slave to receive above binlog event group.
+#
+# although server1 becomes UNREACHABLE on server2/3, server2/3 can still
+# receive binlogs of server1 AFTER(not before) it restarts, i.e. it proved
+# that if server1 doesn't startup, server2/3 can't receive the XA PREPARE event group.
+
+#--let $rpl_connection_name= server2
+#--source include/rpl_connection.inc
+#--echo #expect trx1 prepared on server2
+#XA RECOVER;
+##show binlog events;
+#
+#--let $wait_binlog_event= XA PREPARE
+#--echo #wait until server2 executes the 'XA PREPARE' event.
+#--source include/wait_for_binlog_event.inc
+#XA RECOVER;
+#show binlog events;
+
+# server1 will first become UNREACHABLE in the group, then it's kicked out of
+# the group. But before it's kicked out, we can't do 'start group_replication'
+# to it otherwise the op fails. so we don't need to wait for the UNREACHABLE
+# state, we simply wait for GR members to be 2.
+
+#--echo # wait for server1 to be UNREACHABLE on server2.
+#--let $group_replication_member_state= UNREACHABLE
+#--let $group_replication_member_id= $member1_uuid
+#--source include/gr_wait_for_member_state.inc
+#select*from performance_schema.replication_group_members;
+
+--let $rpl_connection_name= server2
+--source include/rpl_connection.inc
+--let $group_replication_group_name= $group_name
+--let $group_replication_number_of_members= 2
+--source include/gr_wait_for_number_of_members.inc
+#select*from performance_schema.replication_group_members;
+
+--let $rpl_connection_name= server3
+--source include/rpl_connection.inc
+#--echo #expect trx1 prepared on server3
+#XA RECOVER;
+##show binlog events;
+#
+#--let $wait_binlog_event= XA PREPARE
+#--echo #wait until server3 executes the 'XA PREPARE' event.
+#--source include/wait_for_binlog_event.inc
+#XA RECOVER;
+#show binlog events;
+
+#--echo # wait for server1 to be UNREACHABLE on server3.
+#--let $group_replication_member_state= UNREACHABLE
+#--let $group_replication_member_id= $member1_uuid
+#--source include/gr_wait_for_member_state.inc
+#select*from performance_schema.replication_group_members;
+
+
+--let $group_replication_group_name= $group_name
+--let $group_replication_number_of_members= 2
+--source include/gr_wait_for_number_of_members.inc
+#select*from performance_schema.replication_group_members;
+
+--let $rpl_connection_name= server1
+--source include/rpl_connection.inc
+--echo #expect trx1 prepared on server1
+XA RECOVER;
+#show binlog events;
+
+#select*from performance_schema.replication_group_members;
+--source include/start_group_replication.inc
+#select*from performance_schema.replication_group_members;
+
+--echo # Execute XA COMMIT 'trx1'; crash server1 where the binlog is written
+set session debug='+d,crash_after_flush_binlog';
+--error 2013
+XA COMMIT 'trx1';
+
+--echo # Check that no event groups can be received when mysqld crashes at the crash_after_flush_binlog point
+--let $rpl_connection_name= server2
+--source include/rpl_connection.inc
+--let $wait_binlog_event= XA COMMIT
+--echo #wait until server2 executes the 'XA COMMIT' event.
+--source include/wait_for_binlog_event.inc
+XA RECOVER;
+#show binlog events;
+--let $rpl_connection_name= server3
+--source include/rpl_connection.inc
+--let $wait_binlog_event= XA COMMIT
+--echo #wait until server2 executes the 'XA COMMIT' event.
+--source include/wait_for_binlog_event.inc
+XA RECOVER;
+#show binlog events;
+
+# restart server1 immediately otherwise the mtr test framework will quit the test case very soon.
+--echo # Restart server1
+--let $rpl_connection_name= server1
+--source include/rpl_connection.inc
+--enable_reconnect
+--exec echo "restart:--group_replication_local_address=$_group_replication_local_address_server1 --group_replication_group_seeds=$_group_replication_group_seeds_server1" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+
+--echo # Verify that trx1 has been committed on server2&3.
+--let $rpl_connection_name= server2
+--source include/rpl_connection.inc
+XA RECOVER;
+
+--let $wait_binlog_event= XA COMMIT
+--echo #wait until server2 executes the 'XA COMMIT' event.
+--source include/wait_for_binlog_event.inc
+
+select*from t1;
+#show binlog events;
+#--echo # wait for server1 to be UNREACHABLE on server2.
+#--let $group_replication_member_state= UNREACHABLE
+#--let $group_replication_member_id= $member1_uuid
+#--source include/gr_wait_for_member_state.inc
+
+#select*from performance_schema.replication_group_members;
+--let $group_replication_group_name= $group_name
+--let $group_replication_number_of_members= 2
+--source include/gr_wait_for_number_of_members.inc
+#select*from performance_schema.replication_group_members;
+
+--let $rpl_connection_name= server3
+--source include/rpl_connection.inc
+XA RECOVER;
+
+--let $wait_binlog_event= XA COMMIT
+--echo #wait until server3 executes the 'XA COMMIT' event.
+--source include/wait_for_binlog_event.inc
+
+select*from t1;
+#show binlog events;
+#--echo # wait for server1 to be UNREACHABLE on server3.
+#--let $group_replication_member_state= UNREACHABLE
+#--let $group_replication_member_id= $member1_uuid
+#--source include/gr_wait_for_member_state.inc
+
+#select*from performance_schema.replication_group_members;
+--let $group_replication_group_name= $group_name
+--let $group_replication_number_of_members= 2
+--source include/gr_wait_for_number_of_members.inc
+#select*from performance_schema.replication_group_members;
+
+
+--let $rpl_connection_name= server1
+--source include/rpl_connection.inc
+--echo #check that trx1 is committed on server1
+XA RECOVER;
+select*from t1;
+--echo # XA COMMIT 'trx1' event must be at end of binlog.
+#show binlog events;
+#select*from performance_schema.replication_group_members;
+--source include/start_group_replication.inc
+#select*from performance_schema.replication_group_members;
+--let $primnode = `SHOW STATUS LIKE 'group_replication_primary_member'`
+--let $rpl_connection_name= server2
+--source include/rpl_connection.inc
+--let $svr2_uuid = `select @@server_uuid`
+if ($svr2_uuid == $primnode)
+{
+    INSERT INTO test.t1 VALUES (2);
+    #show binlog events;
+}
+
+--let $rpl_connection_name= server3
+--source include/rpl_connection.inc
+--let $svr3_uuid = `select @@server_uuid`
+if ($svr3_uuid == $primnode)
+{
+    INSERT INTO test.t1 VALUES (2);
+    #show binlog events;
+}
+
+--let $rpl_connection_name= server1
+--source include/rpl_connection.inc
+select*from t1;
+
+# designate server1 as master, force a master switch.
+--let $msg = `select group_replication_set_as_primary(@@server_uuid)`
+#SHOW STATUS LIKE 'group_replication_primary_member';
+
+set session debug='+d,crash_after_flush_binlog';
+XA START 'trx2';
+INSERT INTO test.t1 VALUES (3);
+XA END 'trx2';
+--error 2013
+XA COMMIT 'trx2' ONE PHASE;
+
+--echo # Check that no event groups can be received when mysqld crashes at the crash_after_flush_binlog point
+--let $rpl_connection_name= server2
+--source include/rpl_connection.inc
+--let $wait_binlog_event= ONE PHASE
+--echo #wait until server2 executes the 'XA COMMIT ONE PHASE' event.
+--source include/wait_for_binlog_event.inc
+XA RECOVER;
+#show binlog events;
+--let $rpl_connection_name= server3
+--source include/rpl_connection.inc
+--let $wait_binlog_event= ONE PHASE
+--echo #wait until server2 executes the 'XA COMMIT ONE PHASE' event.
+--source include/wait_for_binlog_event.inc
+XA RECOVER;
+#show binlog events;
+
+--echo # Restart server1
+--let $rpl_connection_name= server1
+--source include/rpl_connection.inc
+--enable_reconnect
+--exec echo "restart:--group_replication_local_address=$_group_replication_local_address_server1 --group_replication_group_seeds=$_group_replication_group_seeds_server1" > $MYSQLTEST_VARDIR/tmp/mysqld.1.expect
+--source include/wait_until_connected_again.inc
+--disable_reconnect
+
+# server2
+--echo # Verify that trx1 has been committed on server2&3.
+--let $rpl_connection_name= server2
+--source include/rpl_connection.inc
+
+--let $wait_binlog_event= ONE PHASE
+--echo #wait until server2 executes the 'XA COMMIT ONE PHASE' event.
+--source include/wait_for_binlog_event.inc
+
+select*from t1;
+
+--let $group_replication_group_name= $group_name
+--let $group_replication_number_of_members= 2
+--source include/gr_wait_for_number_of_members.inc
+
+# server3
+--let $rpl_connection_name= server3
+--source include/rpl_connection.inc
+XA RECOVER;
+
+--let $wait_binlog_event= ONE PHASE
+--echo #wait until server3 executes the 'XA COMMIT ONE PHASE' event.
+--source include/wait_for_binlog_event.inc
+
+select*from t1;
+
+--let $group_replication_group_name= $group_name
+--let $group_replication_number_of_members= 2
+--source include/gr_wait_for_number_of_members.inc
+
+# server1
+--let $rpl_connection_name= server1
+--source include/rpl_connection.inc
+--echo #check that trx2 is committed on server1
+select*from t1;
+--echo # XA COMMIT 'trx2' ONE PHASE event must be at end of binlog.
+#show binlog events;
+
+--source include/start_group_replication.inc
+# find the new primary server and switch connection to it
+--source include/gr_find_a_primary.inc
+if ($group_replication_found_primary_out_var)
+{
+  --let $rpl_connection_name= $group_replication_primary_connection_out_var
+  --source include/rpl_connection.inc
+  --let $primary_server_id=`SELECT @@server_id`
+}
+
+if (!$group_replication_found_primary_out_var)
+{
+  --echo performance_schema.replication_group_members
+  --echo --------------------------------------------
+  --query_vertical SELECT * FROM performance_schema.replication_group_members
+  --die "Unable to find new PRIMARY server after old primary was crashed!!"
+}
+
+drop table t1;
+--let $rpl_assert_transaction_length=0
+--let $rpl_skip_sync=1
+--let $rpl_group_replication= 1
+--let $rpl_group_replication_single_primary_mode= 1
+--let $rpl_group_replication_reset_persistent_vars=1
+--source include/group_replication_end.inc

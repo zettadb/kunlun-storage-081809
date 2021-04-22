@@ -2,6 +2,7 @@
 # Test that INFORMATION_SCHEMA.TABLES.UPDATE_TIME is filled
 # correctly for InnoDB tables.
 #
+include/rpl_set_gtid_mode.inc [ON on servers 1]
 CREATE TABLE t (a INT) ENGINE=INNODB;
 ANALYZE TABLE t;
 Table	Op	Msg_type	Msg_text
@@ -51,6 +52,10 @@ XA END 'xatrx';
 XA PREPARE 'xatrx';
 call mtr.add_suppression("Found 1 prepared XA transactions");
 # Kill and restart
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+xa recover;
+formatID	gtrid_length	bqual_length	data
+1	5	0	xatrx
 ANALYZE TABLE t;
 Table	Op	Msg_type	Msg_text
 test.t	analyze	status	OK
@@ -66,3 +71,4 @@ AND update_time IS NOT NULL OR FALSE;
 COUNT(*)
 1
 DROP TABLE t;
+include/rpl_set_gtid_mode.inc [OFF on servers 1]

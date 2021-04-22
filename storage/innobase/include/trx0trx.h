@@ -207,8 +207,7 @@ dberr_t trx_prepare_for_mysql(trx_t *trx);
  their transaction objects for a recovery.
  @return number of prepared transactions */
 int trx_recover_for_mysql(
-    XA_recover_txn *txn_list, /*!< in/out: prepared transactions */
-    ulint len,                /*!< in: number of slots in xid_list */
+    XA_recover_txn_list *txn_list, /*!< in/out: prepared transactions */
     MEM_ROOT *mem_root);      /*!< in: memory for table names */
 /** This function is used to find one X/Open XA distributed transaction
  which is in the prepared state
@@ -1129,6 +1128,10 @@ struct trx_t {
 
   /* Fields protected by the srv_conc_mutex. */
   bool declared_to_be_inside_innodb;
+
+  /* True if the prepared txn is prepared by XA COP, false if prepared by
+   * XA PREPARE. Only valid when state is TRX_STATE_PREPARED. */
+  bool one_phase_prepared;
   /*!< this is TRUE if we have declared
   this transaction in
   srv_conc_enter_innodb to be inside the

@@ -1424,6 +1424,36 @@ class THD : public MDL_context_owner,
  private:
   unsigned int m_current_stage_key;
 
+  /*
+    dzw: true if this session is executing a long service command, including
+    sessions such as binlog sender, sleeping connection and other
+    connections that do lengthy work.
+    if it's true, thread pool doesn't count them as waiters by setting
+    so that more threads are allowed to execute in the pool.
+  */
+  bool m_is_long_svc;
+ public:
+  bool is_long_svc() const
+  {
+    return m_is_long_svc;
+  }
+
+  void set_long_svc(bool b)
+  {
+    m_is_long_svc = b;
+  }
+
+  std::string toString() const;
+  void print_aborted_warning(int threshold, const char *reason) const;
+
+  /*
+    dzw: The current session connection is closed while executing this command.
+  */
+  enum enum_server_command conn_broken_cmd;
+  // dzw: microseconds the thd has been waiting in threadpool req queue before its
+  // query was processed.
+
+  ulonglong usecs_in_q;
  public:
   // See comment in THD::enter_cond about why SUPPRESS_TSAN is needed.
   void enter_stage(const PSI_stage_info *stage, PSI_stage_info *old_stage,
@@ -1845,6 +1875,11 @@ class THD : public MDL_context_owner,
 
   void reset_skip_readonly_check() {
     if (skip_readonly_check) skip_readonly_check = false;
+  }
+
+  bool got_net_error() const
+  {
+    return net.error != 0;
   }
 
   void issue_unsafe_warnings();
@@ -2380,18 +2415,20 @@ class THD : public MDL_context_owner,
   /* Statement id is thread-wide. This counter is used to generate ids */
   ulong statement_id_counter;
   ulong rand_saved_seed1, rand_saved_seed2;
-  my_thread_t real_id; /* For debugging */
-                       /**
-                         This counter is 32 bit because of the client protocol.
-                     
-                         @note It is not meant to be used for my_thread_self(), see @c real_id for
-                         this.
-                     
-                         @note Set to reserved_thread_id on initialization. This is a magic
-                         value that is only to be used for temporary THDs not present in
-                         the global THD list.
-                       */
+  my_thread_t real_id; /* pthread_self() result, for debugging */
+  pid_t      real_tid; // gettid() result.
  private:
+  /**
+    This counter is 32 bit because of the client protocol, allocated by mysql
+    internally, not related to operating system.
+ 
+    @note It is not meant to be used for my_thread_self(), see @c real_id for
+    this.
+
+    @note Set to reserved_thread_id on initialization. This is a magic
+    value that is only to be used for temporary THDs not present in
+    the global THD list.
+  */
   my_thread_id m_thread_id;
 
  public:
@@ -2401,6 +2438,13 @@ class THD : public MDL_context_owner,
   */
   void set_new_thread_id();
   my_thread_id thread_id() const { return m_thread_id; }
+  // return the pthread_t pthread_self() result of the OS thread currently
+  // handling this THD session.
+  my_thread_t real_thread_id() const { return real_id;}
+  // return the pid_t gettid() result of the OS thread currently
+  // handling this THD session.
+  pid_t real_thread_tid() const { return real_tid; }
+  
   uint tmp_table;
   uint server_status, open_options;
   enum enum_thread_type system_thread;

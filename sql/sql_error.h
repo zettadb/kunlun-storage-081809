@@ -538,6 +538,20 @@ class Diagnostics_area {
   */
   Sql_condition *error_condition() const;
 
+  int toString(char * buf,size_t buflen) const
+  {
+      int ret = 0;
+      ret += snprintf(buf+ret, buflen -ret,"m_preexisting_sql_conditions size:%u,",
+                      m_preexisting_sql_conditions.elements);
+      ret += snprintf(buf+ret, buflen -ret,"m_is_sent:%d,", m_is_sent);
+      ret += snprintf(buf+ret, buflen -ret,"m_can_overwrite_status:%d,", m_can_overwrite_status);
+      ret += snprintf(buf+ret, buflen -ret,"m_allow_unlimited_conditions:%d,",
+                                                m_allow_unlimited_conditions );
+      ret += snprintf(buf+ret, buflen -ret,"m_status:%d,", m_status);
+      ret += snprintf(buf+ret, buflen -ret,"m_mysql_errno:%d", m_mysql_errno );
+      ret += snprintf(buf+ret, buflen -ret,"message:%s", m_message_text);
+      return ret;
+  }
  private:
   /**
     Add a new SQL-condition to the current list and increment the respective

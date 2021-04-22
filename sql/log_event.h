@@ -102,9 +102,7 @@ class Basic_ostream;
 #include "mysql/psi/mysql_stage.h"
 #endif
 
-#ifndef MYSQL_SERVER
 class Format_description_log_event;
-#endif
 
 extern PSI_memory_key key_memory_Incident_log_event_message;
 extern PSI_memory_key key_memory_Rows_query_log_event_rows_query;
@@ -236,6 +234,8 @@ int ignored_error_code(int err_code);
 
   #define LOG_EVENT_TIME_F            0x1
   #define LOG_EVENT_FORCED_ROTATE_F   0x2
+
+  #define LOG_EVENT_BINLOG_IN_USE_F   0x1  this is defined in another header, so this bit is already in use.
 */
 
 /**
@@ -318,6 +318,13 @@ int ignored_error_code(int err_code);
    a query accessing more than OVER_MAX_DBS_IN_EVENT_MTS databases.
 */
 #define LOG_EVENT_MTS_ISOLATE_F 0x200
+
+/**
+ * It's only ever set to a Query_log_event or a Gtid_log_event.
+ * Set to the Query_log_event iff the stmt is a DDL or
+ * to the Gtid_log_event iff the binlog event group wraps a DDL stmt.
+ * */
+#define LOG_EVENT_DDL_F 0x8000
 
 /** @}*/
 
@@ -1414,7 +1421,8 @@ class Query_log_event : public virtual binary_log::Query_event,
     return !strncmp(query, "COMMIT", q_len) ||
            (!native_strncasecmp(query, STRING_WITH_LEN("ROLLBACK")) &&
             native_strncasecmp(query, STRING_WITH_LEN("ROLLBACK TO "))) ||
-           !strncmp(query, STRING_WITH_LEN("XA ROLLBACK"));
+           !strncmp(query, STRING_WITH_LEN("XA ROLLBACK")) ||
+           !strncmp(query, STRING_WITH_LEN("XA COMMIT"));
   }
   static size_t get_query(const char *buf, size_t length,
                           const Format_description_event *fd_event,
@@ -1794,6 +1802,13 @@ class XA_prepare_log_event : public binary_log::XA_prepare_event,
   size_t get_data_size() override {
     return xid_bufs_size + my_xid.gtrid_length + my_xid.bqual_length;
   }
+
+  std::string get_xid_str() const
+  {
+    std::string xid_str(my_xid.data, my_xid.gtrid_length);
+    return xid_str;
+  }
+
 #ifdef MYSQL_SERVER
   bool write(Basic_ostream *ostream) override;
 #else
@@ -3843,8 +3858,60 @@ B_l:Previous_gtids_event   Log_event
 class Previous_gtids_log_event : public binary_log::Previous_gtids_event,
                                  public Log_event {
  public:
+  /*
+   * Extra data currently only store XA prepared txn ids.
+   * extra data after gtid set: header,payload
+   * header: 8bytes: magic(2bytes, uint16 integer), flags: 2bytes, total length of extra data: 4bytes
+   * payload:
+   *    XA PREPARED LIST: length(4 bytes), the string, txn ids seperated by |.
+   * */
+  struct Extra_header {
+    const static uint16_t MAGIC = 0xca53; //1100101001010011;
+    /*
+     * There is XA-PRPARED-LIST following the extra header.
+     * */
+    const static int HAS_XA_PREPARED_TXNS = 0x1;
+    /*
+     * old official format which doesn't have the extra header and payload
+     * that follows it.
+     * */
+    const static int OLD_OFFICIAL_FORMAT = 0x2;
+    const static int XA_PREPARED_IDS_HDRSZ = sizeof(uint32_t);
+
+    Extra_header () {
+      memset(this, 0, sizeof(Extra_header));
+      magic = MAGIC;
+    }
+
+    uint serialize(char *buf);
+    uint deserialize(const char*buf);
+    int pack_info(Protocol *);
+
+    uint16_t magic;
+    uint16_t flags;
+    /*
+     * Total NO. of bytes of the payload, not incl. this extra header.
+     * For now it's sizeof(uint32_t) + XA-PREPARED-IDS string length.
+     * */
+    uint32_t payload_length;
+  };
+
+  const static uint EXTRA_HEADER_SIZE = sizeof(Extra_header);
+  const char *get_xa_prepared_txnids() const {
+    return (m_extra_hdr.flags & Extra_header::HAS_XA_PREPARED_TXNS) ?
+      (m_extra_hdr_ptr + EXTRA_HEADER_SIZE +
+       Extra_header::XA_PREPARED_IDS_HDRSZ) : NULL;
+  }
+
+  bool old_official_format() const
+  { return (m_extra_hdr.flags & Extra_header::OLD_OFFICIAL_FORMAT) != 0; }
+
+ private:
+  Extra_header m_extra_hdr;
+  char *m_extra_hdr_ptr;// points to the extra header inside 'buf' buffer.
+ public:
 #ifdef MYSQL_SERVER
-  Previous_gtids_log_event(const Gtid_set *set);
+  Previous_gtids_log_event(const Gtid_set *set, const std::string *xa_prepared_ids);
 #endif
 
 #ifdef MYSQL_SERVER

@@ -82,6 +82,10 @@ static_assert(sizeof(pk_pos_data_lock_wait::m_blocking_engine_lock_id) >
 /** Initial number of rows in the table cache */
 #define TABLE_CACHE_INITIAL_ROWSNUM 1024
 
+extern "C" char *thd_xid_serialize(const MYSQL_THD thd, char *xidstr, unsigned int xidbuflen);
+extern "C" const char *thd_trx_xa_type(const MYSQL_THD thd);
+extern "C" const char *thd_trx_xa_xid(const MYSQL_THD thd);
+
 /** @brief The maximum number of chunks to allocate for a table cache.
 
 The rows of a table cache are stored in a set of chunks. When a new
@@ -456,10 +460,27 @@ static ibool fill_trx_row(
 
   if (trx->mysql_thd == NULL) {
     /* For internal transactions e.g., purge and transactions
-    being recovered at startup there is no associated MySQL
+    recovered at startup there is no associated MySQL
     thread data structure. */
     row->trx_mysql_thread_id = 0;
     row->trx_query = NULL;
+    row->trx_xid[0]= '\0';
+    row->trx_xa_type= NULL;
+    if (trx->xid && !trx->xid->is_null()) {
+      if (trx_is_mysql_xa(trx)) {
+        row->trx_xa_type = "internal_recvrd";
+        snprintf(row->trx_xid, sizeof(row->trx_xid), "%llu",
+				 trx->xid->get_my_xid());
+      } else {
+        trx->xid->serialize(row->trx_xid);
+        row->trx_xa_type = "external_recvrd";
+	  }
+    } else {
+      if (trx->internal)
+        row->trx_xa_type = (trx->is_recovered ? "idb_internal_recvrd" : "idb_internal");
+      else
+        row->trx_xa_type = (trx->is_recovered ? "mysql_internal_recvrd" : "mysql_internal");
+    }
     goto thd_done;
   }
 
@@ -480,6 +501,16 @@ static ibool fill_trx_row(
   } else {
     row->trx_query = NULL;
   }
+
+  // Cache xid
+  row->trx_xid[0]= '\0';
+  {
+    const char *trx_xid= thd_trx_xa_xid(trx->mysql_thd);
+    if (trx_xid)
+      memcpy(row->trx_xid, trx_xid, XID::ser_buf_size + 16);
+  }
+
+  row->trx_xa_type = thd_trx_xa_type(trx->mysql_thd);
 
 thd_done:
   s = trx->op_info;

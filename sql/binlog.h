@@ -662,7 +662,7 @@ class MYSQL_BIN_LOG : public TC_LOG {
   std::pair<bool, bool> sync_binlog_file(bool force);
   void process_commit_stage_queue(THD *thd, THD *queue);
   void process_after_commit_stage_queue(THD *thd, THD *first);
-  int process_flush_stage_queue(my_off_t *total_bytes_var, bool *rotate_var,
+  int process_flush_stage_queue(THD *thd, my_off_t *total_bytes_var, bool *rotate_var,
                                 THD **out_queue_var);
   int ordered_commit(THD *thd, bool all, bool skip_commit = false);
   void handle_binlog_flush_or_sync_error(THD *thd, bool need_lock_log);
@@ -794,6 +794,7 @@ class MYSQL_BIN_LOG : public TC_LOG {
 
  private:
   bool after_write_to_relay_log(Master_info *mi);
+  int overwrite_index_file(const std::vector<std::string> &log_ents);
 
  public:
   void make_log_name(char *buf, const char *log_ident);

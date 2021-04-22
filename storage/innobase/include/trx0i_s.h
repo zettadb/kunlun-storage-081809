@@ -38,6 +38,7 @@ this program; if not, write to the Free Software Foundation, Inc.,
 #include "dict0types.h"
 #include "trx0types.h"
 #include "univ.i"
+#include "xa.h"
 
 struct lock_t;
 class PSI_server_data_lock_container;
@@ -173,6 +174,9 @@ struct i_s_trx_row_t {
   ulint trx_is_autocommit_non_locking;
   /*!< trx_is_autocommit_non_locking(trx)
    */
+
+  char trx_xid[XID::ser_buf_size + 16];
+  const char *trx_xa_type;
 };
 
 /** Cache of INFORMATION_SCHEMA table data */

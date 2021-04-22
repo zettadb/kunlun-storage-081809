@@ -17,7 +17,7 @@ SET DEBUG_SYNC = 'reset';
 [log_stop.inc] percona.slow_extended.innodb_debug
 [log_grep.inc] file: percona.slow_extended.innodb_debug pattern: ^# Schema: .+  Last_errno: \d+  Killed: \d+$
 [log_grep.inc] lines:   2
-[log_grep.inc] file: percona.slow_extended.innodb_debug pattern: ^#.*Rows_affected: \d+$
+[log_grep.inc] file: percona.slow_extended.innodb_debug pattern: ^#.*Rows_affected: \d+
 [log_grep.inc] lines:   2
 [log_grep.inc] file: percona.slow_extended.innodb_debug pattern: ^# Bytes_sent: \d+.*$
 [log_grep.inc] lines:   2

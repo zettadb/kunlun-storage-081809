@@ -94,6 +94,10 @@
 #include "sql/xa.h"
 #include "thr_mutex.h"
 
+#include <sys/types.h>
+#include <sys/syscall.h>
+#define gettid() syscall(SYS_gettid)
+
 using std::max;
 using std::min;
 using std::unique_ptr;
@@ -102,6 +106,8 @@ ulong opt_log_slow_sp_statements = 0;
 
 ulong kill_idle_transaction_timeout = 0;
 PSI_mutex_key key_LOCK_bloom_filter;
+
+extern int print_extra_info;
 
 /*
   The following is used to initialise Table_ident with a internal
@@ -790,7 +796,7 @@ void THD::init(void) {
                     randominit(&slog_rand, 0x11111111, 0x77777777););
   }
 
-  server_status = SERVER_STATUS_AUTOCOMMIT;
+  server_status = ((this->variables.option_bits & OPTION_AUTOCOMMIT) ? SERVER_STATUS_AUTOCOMMIT : 0);
   if (variables.sql_mode & MODE_NO_BACKSLASH_ESCAPES)
     server_status |= SERVER_STATUS_NO_BACKSLASH_ESCAPES;
 
@@ -843,6 +849,12 @@ void THD::init(void) {
     ALTER USER statements.
   */
   m_disable_password_validation = false;
+
+  m_is_long_svc = false;
+  conn_broken_cmd = COM_END;
+  usecs_in_q = 0;
+  real_tid=0;
+  real_id= 0;
 }
 
 void THD::init_query_mem_roots() {
@@ -1213,6 +1225,8 @@ void THD::awake(THD::killed_state state_to_set) {
     return;
   }
 
+  print_aborted_warning(1, "KILLED");
+
   /*
     Set killed flag if the connection is being killed (state_to_set
     is KILL_CONNECTION) or the connection is processing a query
@@ -1312,6 +1326,34 @@ extern "C" void thd_kill(ulong id) {
 extern "C" int thd_get_ft_query_extra_word_chars(void) {
   const THD *thd = current_thd;
   return thd ? thd->variables.ft_query_extra_word_chars : 0;
+}
+
+extern "C"
+char *thd_xid_serialize(const MYSQL_THD thd, char *xidstr, uint xidbuflen)
+{
+  if (!thd || xidbuflen < XID::ser_buf_size || !thd->get_transaction() ||
+      !thd->get_transaction()->xid_state() ||
+      !thd->get_transaction()->xid_state()->get_xid())
+    return NULL;
+  return thd->get_transaction()->xid_state()->get_xid()->serialize(xidstr);
+}
+
+extern "C"
+const char *thd_trx_xa_type(const MYSQL_THD thd)
+{
+  if (!thd || !thd->get_transaction() ||
+      !thd->get_transaction()->xid_state())
+    return NULL;
+  return thd->get_transaction()->xid_state()->get_xa_type_str();
+}
+
+extern "C"
+const char *thd_trx_xa_xid(const MYSQL_THD thd)
+{
+  if (!thd || !thd->get_transaction() ||
+      !thd->get_transaction()->xid_state())
+    return NULL;
+  return thd->get_transaction()->xid_state()->get_xa_xid();
 }
 
 /**
@@ -1415,8 +1457,8 @@ void THD::store_globals() {
   set_my_thread_var_id(m_thread_id);
 #endif
   real_id = my_thread_self();  // For debugging
-
   vio_set_thread_id(net.vio, real_id);
+  real_tid= gettid();
 }
 
 /*
@@ -1433,6 +1475,8 @@ void THD::restore_globals() {
   /* Undocking the thread specific data. */
   current_thd = nullptr;
   THR_MALLOC = nullptr;
+  real_tid=0;
+  real_id=0;
 }
 
 // Resets stats in a THD.
@@ -1953,6 +1997,7 @@ void THD::send_kill_message() const {
       => "OK" would be misleading the caller.
     */
     my_error(err, MYF(ME_FATALERROR));
+    print_aborted_warning(0, "send_kill_message");
   }
 }
 
@@ -2910,6 +2955,68 @@ void THD::change_item_tree(Item **place, Item *new_value) {
   *place = new_value;
 }
 
+int g_enhanced_mode = 1;
+
+void print_net_to_string(const NET *net, char *buf, size_t buflen);
+
+void THD::print_aborted_warning(int threshold, const char *reasonstr) const
+{
+  if (print_extra_info > threshold)
+  {
+    const Security_context *sctx= &m_main_security_ctx;
+    // dzw: If client actively quit/close this connection, then we don't print
+    // this msg to avoid so many annoying false alarms.
+    // also, ignore connections aborted because of login failure or in an idle connection.
+    if ((m_command != COM_QUIT &&
+        !(conn_broken_cmd == COM_END && (m_command == COM_SLEEP || m_command ==
+        COM_CONNECT))))
+    {
+      sql_print_warning(ER_DEFAULT(ER_NEW_ABORTING_CONNECTION),
+                        thread_id(), (m_db.str ? m_db.str : "unconnected"),
+                        sctx->user().str ? sctx->user().str : "unauthenticated",
+                        sctx->host_or_ip().str, (g_enhanced_mode ?
+                        (toString()+std::string(reasonstr)).c_str() : reasonstr));
+    }
+
+  }
+}
+
+std::string THD::toString() const
+{
+  char net_str[512];
+  char timebuf[256];
+  char buff[4096];
+  char da_buff[4096];
+  time_t conn_time = (time_t)(current_connect_time/1000000);
+  print_net_to_string(&net, net_str, 512);
+  if (m_stmt_da)
+    m_stmt_da->toString(da_buff, sizeof(da_buff));
+  const Security_context *sctx= &m_main_security_ctx;
+  killed_state ks = killed.load();
+
+  snprintf(buff, sizeof(buff), "Session info: net:{%s},security_ctx:{%s},source ip:%s,peerport:%d,proc_info:%s,client_capabilities:%#lX,max_client_packet_len:%lu,conn_broken_by_cmd:%d, cur_command:%d, killed: %d, db:%s,start_time:%lu,query_id:%ld,thread_id:%u, real_tid:%d, computing_node_id: %u, global_conn_id:%u, is_fatal_error:%d,current_connect_time:%s,Diagnostics_area:{%s}",
+              net_str,
+              sctx? sctx->toString().c_str():"<null>",
+              sctx->host_or_ip().str, peer_port,
+              proc_info ? proc_info : "<null>",
+              m_protocol? m_protocol->get_client_capabilities(): 0,
+              max_client_packet_length,
+              conn_broken_cmd,
+              m_command,
+              ks,
+              m_db.str ? m_db.str : "unconnected",
+              start_time.tv_sec,
+              query_id,
+              thread_id(),
+              real_thread_tid(),
+              variables.comp_node_id,
+              variables.global_conn_id,
+              is_fatal_error(),
+              ctime_r(&conn_time, timebuf),
+              m_stmt_da ? da_buff : "<null>");
+
+  return std::string(buff);
+}
 bool THD::notify_hton_pre_acquire_exclusive(const MDL_key *mdl_key,
                                             bool *victimized) {
   return ha_notify_exclusive_mdl(this, mdl_key, HA_NOTIFY_PRE_EVENT,

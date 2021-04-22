@@ -11,7 +11,7 @@
 --disable_result_log
 --disable_query_log
 
---let $counter= 1000
+--let $counter= 10000
 if ($explicit_default_counter)
 {
   --let $wait_counter= $explicit_default_counter

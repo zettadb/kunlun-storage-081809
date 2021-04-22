@@ -5,6 +5,9 @@
 -- echo #
 
 -- source include/have_innodb_max_16k.inc
+--let $rpl_gtid_mode= ON
+--let $rpl_set_enforce_gtid_consistency= 1
+--source include/rpl_set_gtid_mode.inc
 
 CREATE TABLE t (a INT) ENGINE=INNODB;
 
@@ -59,6 +62,11 @@ call mtr.add_suppression("Found 1 prepared XA transactions");
 
 --source include/kill_and_restart_mysqld.inc
 
+--let $rpl_gtid_mode= ON
+--let $rpl_set_enforce_gtid_consistency= 1
+--source include/rpl_set_gtid_mode.inc
+xa recover;
+
 ANALYZE TABLE t;
 SELECT update_time FROM information_schema.tables WHERE table_name = 't';
 
@@ -72,3 +80,6 @@ SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 't'
 AND update_time IS NOT NULL OR FALSE;
 
 DROP TABLE t;
+--let $rpl_gtid_mode= OFF
+--let $rpl_set_enforce_gtid_consistency= 0
+--source include/rpl_set_gtid_mode.inc

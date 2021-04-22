@@ -41,7 +41,7 @@
 call mtr.add_suppression("Failed to set up SSL because of the following SSL library error");
 
 let $total_global_vars=`SELECT COUNT(*) FROM performance_schema.global_variables where variable_name NOT LIKE 'ndb_%'`;
-let $total_persistent_vars=436;
+let $total_persistent_vars=442;
 
 --echo ***************************************************************
 --echo * 0. Verify that variables present in performance_schema.global
@@ -152,7 +152,7 @@ SET PERSIST innodb_monitor_enable="latch";
 SET PERSIST innodb_monitor_disable="latch";
 SET PERSIST innodb_monitor_reset="latch";
 SET PERSIST innodb_monitor_reset_all="latch";
-
+SELECT * FROM performance_schema.persisted_variables;
 --enable_warnings
 --enable_query_log
 --echo

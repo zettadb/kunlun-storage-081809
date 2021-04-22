@@ -97,8 +97,10 @@ count(*)
 2000
 SELECT variable_value >= 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_num_pages_encrypted';
 variable_value >= 0
+1
 SELECT variable_value >= 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_num_pages_decrypted';
 variable_value >= 0
+1
 # restart
 update innodb_normal set c1 = c1 +1;
 update innodb_compact set c1 = c1 + 1;
@@ -144,8 +146,10 @@ count(*)
 set innodb_default_encryption_key_id = DEFAULT;
 SELECT variable_value >= 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_num_pages_encrypted';
 variable_value >= 0
+1
 SELECT variable_value >= 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_num_pages_decrypted';
 variable_value >= 0
+1
 alter table innodb_compact engine=innodb encryption='KEYRING';
 show create table innodb_compact;
 Table	Create Table
@@ -240,8 +244,10 @@ count(*)
 2000
 SELECT variable_value >= 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_num_pages_encrypted';
 variable_value >= 0
+1
 SELECT variable_value >= 0 FROM performance_schema.global_status WHERE variable_name = 'innodb_num_pages_decrypted';
 variable_value >= 0
+1
 drop procedure innodb_insert_proc;
 drop table innodb_normal;
 drop table innodb_compact;

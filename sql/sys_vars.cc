@@ -1175,8 +1175,27 @@ static bool check_session_admin_outside_trx_outside_sf_outside_sp(
   return false;
 }
 
+int ddc_mode = 1;
 static bool binlog_format_check(sys_var *self, THD *thd, set_var *var) {
   if (check_session_admin(self, thd, var)) return true;
+
+  /*
+    When isolation_level is read-committed and binlog_format is
+    statement, any insert/delete/update stmtms are rejected silently.
+    So forbid such combination for current session as well as globally.
+  */
+  if (ddc_mode && var->save_result.ulonglong_value == BINLOG_FORMAT_STMT &&
+      ((var->type == OPT_SESSION && thd->variables.transaction_isolation == ISO_READ_COMMITTED) ||
+       (var->type == OPT_GLOBAL && global_system_variables.transaction_isolation == ISO_READ_COMMITTED)))
+  {
+    my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), "binlog_format", "statement");
+    const char *wide= (var->type == OPT_GLOBAL ? "global" : "session");
+    push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_VALUE_FOR_VAR,
+                        "Can not set %s binlog_format = statement when %s transaction_isolation = read-committed.",
+                        wide, wide);
+
+    return true;
+  }
 
   if (var->type == OPT_GLOBAL || var->type == OPT_PERSIST) {
     /*
@@ -3667,6 +3686,22 @@ static Sys_var_charptr Sys_secure_file_priv(
     CMD_LINE(REQUIRED_ARG), IN_FS_CHARSET,
     DEFAULT(DEFAULT_SECURE_FILE_PRIV_DIR));
 
+ulong shard_id = 1;
+static Sys_var_ulong Sys_shard_id(
+    "shard_id",
+    "Kunlun cluster: The ID of the storage shard this server instance belongs to.",
+    READ_ONLY GLOBAL_VAR(shard_id), CMD_LINE(REQUIRED_ARG),
+    VALID_RANGE(0, UINT_MAX32), DEFAULT(1), BLOCK_SIZE(1), NO_MUTEX_GUARD,
+    NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0));
+
+ulong cluster_id = 0;
+static Sys_var_ulong Sys_cluster_id(
+    "cluster_id",
+    "The ID of the Kunlun DBMS cluster this server instance belongs to.",
+    READ_ONLY GLOBAL_VAR(cluster_id), CMD_LINE(REQUIRED_ARG),
+    VALID_RANGE(0, INT_MAX32), DEFAULT(1), BLOCK_SIZE(1), NO_MUTEX_GUARD,
+    NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0));
+
 static bool fix_server_id(sys_var *, THD *thd, enum_var_type) {
   // server_id is 'MYSQL_PLUGIN_IMPORT ulong'
   // So we cast here, rather than change its type.
@@ -4871,6 +4906,24 @@ static bool check_transaction_read_only(sys_var *, THD *thd, set_var *var) {
     my_error(ER_CANT_CHANGE_TX_CHARACTERISTICS, MYF(0));
     return true;
   }
+
+  /*
+    When isolation_level is read-committed and binlog_format is
+    statement, any insert/delete/update stmtms are rejected silently.
+    So forbid such combination for current session as well as globally.
+  */
+  if (ddc_mode && var->save_result.ulonglong_value == ISO_READ_COMMITTED &&
+      ((var->type == OPT_SESSION && thd->variables.binlog_format == BINLOG_FORMAT_STMT) ||
+       (var->type == OPT_GLOBAL && global_system_variables.binlog_format == BINLOG_FORMAT_STMT)))
+  {
+    my_error(ER_WRONG_VALUE_FOR_VAR, MYF(0), "transaction_isolation", "READ-COMMITTED");
+    const char *wide= (var->type == OPT_GLOBAL ? "global" : "session");
+    push_warning_printf(thd, Sql_condition::SL_WARNING, ER_WRONG_VALUE_FOR_VAR,
+                        "Can not set %s transaction_isolation = READ-COMMITTED when %s binlog_format = statement.",
+                        wide, wide);
+    return true;
+  }
+
   return false;
 }
 
@@ -7247,3 +7300,87 @@ static Sys_var_charptr Sys_protocol_compression_algorithms(
     DEFAULT(const_cast<char *>(PROTOCOL_COMPRESSION_DEFAULT_VALUE)),
     NO_MUTEX_GUARD, NOT_IN_BINLOG,
     ON_CHECK(check_set_protocol_compression_algorithms), ON_UPDATE(0));
+
+extern int print_extra_info;
+static Sys_var_int32 Sys_print_extra_info(
+    "print_extra_info_verbosity",
+    "Verbosity to print extra info to help problem dignosis, including disconnection info,"
+    " newly added fields of log events, etc. The bigger the more detailed/verbose info printed, 0 disables any verbose info to be printed.",
+    GLOBAL_VAR(print_extra_info),
+    CMD_LINE(REQUIRED_ARG),
+    VALID_RANGE(0, 100000), DEFAULT(0), BLOCK_SIZE(1), NO_MUTEX_GUARD,
+    NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED_VAR(""));
+
+extern int ddc_mode;
+static Sys_var_int32 Sys_ddc_mode(
+    "ddc_mode",
+    "ddc mode",
+    GLOBAL_VAR(ddc_mode),
+    CMD_LINE(REQUIRED_ARG),
+    VALID_RANGE(0, 1000), DEFAULT(1), BLOCK_SIZE(1), NO_MUTEX_GUARD,
+    NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0), DEPRECATED_VAR(""));
+
+int slow_logging_start_point= 2;
+static Sys_var_int32 Sys_slow_logging_start_point(
+       "slow_logging_start_point",
+       "Start of query period for slow logging: query reception(2), query start(1) or after locking(0) to end time.",
+       GLOBAL_VAR(slow_logging_start_point),
+       CMD_LINE(OPT_ARG),
+       VALID_RANGE(0, 2), DEFAULT(2), BLOCK_SIZE(1),
+       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0));
+
+#ifndef DBUG_OFF
+extern int64_t multi_purpose_int;
+static Sys_var_long Sys_multi_purpose_int(
+       "multi_purpose_int",
+       "Multiple purpose integer to be used only at test",
+       GLOBAL_VAR(multi_purpose_int),
+       CMD_LINE(OPT_ARG),
+       VALID_RANGE(INT64_MIN, INT64_MAX), DEFAULT(0), BLOCK_SIZE(1),
+       NO_MUTEX_GUARD, NOT_IN_BINLOG, ON_CHECK(0), ON_UPDATE(0));
+#endif
+
+bool disconnect_on_net_write_timeout= true;
+static Sys_var_bool Sys_disconnect_on_net_write_timeout(
+       "disconnect_on_net_write_timeout",
+       "Disconnect client connection if times out writing results to client.",
+       GLOBAL_VAR(disconnect_on_net_write_timeout),
+       CMD_LINE(OPT_ARG), DEFAULT(true));
+
+/*
+ * Is gtid possible to be generated and assigned to thd's trx's
+ * innodb update undo log, if not already generated or
+ * assigned(only applicable for slaves, since this
+ * is called before gtid generated for a trx).
+ * */
+bool thd_gtid_generatable(THD *thd, bool &is_sbr)
+{
+  is_sbr = (thd->variables.binlog_format == BINLOG_FORMAT_STMT);
+  return (!thd->slave_thread && thd->variables.sql_log_bin &&
+         opt_bin_log && _gtid_mode >= GTID_MODE_ON_PERMISSIVE) ||
+         !(thd->owned_gtid.is_empty() ||
+           thd->owned_gtid.sidno == THD::OWNED_SIDNO_ANONYMOUS);
+}
+
+bool clone_binlog_phy_consistency = true;
+static Sys_var_bool Sys_clone_binlog_phy_consistency(
+       "clone_binlog_phy_consistency",
+       "Keep binlog physical position consistent with data in SEs.",
+       GLOBAL_VAR(clone_binlog_phy_consistency),
+       CMD_LINE(OPT_ARG), DEFAULT(true));
+
+uint32_t comp_node_id;
+static Sys_var_uint Sys_computing_node_id(
+    "computing_node_id",
+    "Computing node id of current connection",
+    SESSION_ONLY(comp_node_id), NO_CMD_LINE,
+    VALID_RANGE(0, UINT_MAX), DEFAULT(0), BLOCK_SIZE(1), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+    ON_CHECK(0));
+
+uint32_t global_conn_id;
+static Sys_var_uint Sys_global_conn_id(
+    "global_conn_id",
+    "Global connection id of current connection allocated by the computing node.",
+    SESSION_ONLY(global_conn_id), NO_CMD_LINE,
+    VALID_RANGE(0, UINT_MAX), DEFAULT(0), BLOCK_SIZE(1), NO_MUTEX_GUARD, NOT_IN_BINLOG,
+    ON_CHECK(0));

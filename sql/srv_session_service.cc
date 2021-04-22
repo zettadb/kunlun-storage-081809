@@ -166,6 +166,18 @@ int srv_session_close(Srv_session *session) {
   }
 
   session->close();
+  /*
+   * In rare cases, session->thd.m_release_resources is still false and in this
+   * case below Srv_session::~Srv_session() will crash because Srv_session::thd
+   * is destroyed after Srv_session::protocol_error is destroyed, but
+   * Srv_session::thd.m_protocol points to Srv_session::protocol_error, and in
+   * THD::~THD(), THD::release_resources() is called, which calls m_protocol's
+   * virtual function, but now m_protocol is already destroyed.
+   *
+   * This call will be an no-op if session->thd.m_release_resources is true.
+   * */
+  if (session->get_thd() && !session->get_thd()->release_resources_done())
+    session->get_thd()->release_resources();
   delete session;
 
   /*

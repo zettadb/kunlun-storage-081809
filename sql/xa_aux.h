@@ -23,6 +23,9 @@
 #ifndef XA_AUX_H
 #define XA_AUX_H
 #include "m_string.h"  // _dig_vec_lower
+#include <set>
+#include <string>
+#include <functional>
 
 /**
   Function serializes XID which is characterized by by four last arguments
@@ -42,37 +45,85 @@
   @return  the value of the buffer pointer
 */
 
-inline char *serialize_xid(char *buf, long fmt, long gln, long bln,
-                           const char *dat) {
-  int i;
-  char *c = buf;
-  /*
-    Build a string like following pattern:
-      X'hex11hex12...hex1m',X'hex21hex22...hex2n',11
-    and store it into buf.
-    Here hex1i and hex2k are hexadecimals representing XID's internal
-    raw bytes (1 <= i <= m, 1 <= k <= n), and `m' and `n' even numbers
-    half of which corresponding to the lengths of XID's components.
-  */
-  *c++ = 'X';
-  *c++ = '\'';
-  for (i = 0; i < gln; i++) {
-    *c++ = _dig_vec_lower[static_cast<uchar>(dat[i]) >> 4];
-    *c++ = _dig_vec_lower[static_cast<uchar>(dat[i]) & 0x0f];
-  }
-  *c++ = '\'';
+char *serialize_xid(char *buf, long fmt, long gln, long bln,
+                           const char *dat);
 
-  *c++ = ',';
-  *c++ = 'X';
-  *c++ = '\'';
-  for (; i < gln + bln; i++) {
-    *c++ = _dig_vec_lower[static_cast<uchar>(dat[i]) >> 4];
-    *c++ = _dig_vec_lower[static_cast<uchar>(dat[i]) & 0x0f];
-  }
-  *c++ = '\'';
-  sprintf(c, ",%lu", fmt);
+bool deserialize_xid(const char *buf, long &fmt, long &gln, long &bln, char *dat);
 
-  return buf;
-}
+
+
+class Prepared_xa_txnids
+{
+  typedef std::set<std::string> Txnids_t;
+  class Slot
+  {
+    pthread_mutex_t mutex;
+    Txnids_t txnids;
+  public:
+    Slot()
+    {
+      pthread_mutex_init(&mutex, NULL);
+    }
+    ~Slot()
+    {
+      pthread_mutex_destroy(&mutex);
+    }
+    void add_id(const std::string &id)
+    {
+      pthread_mutex_lock(&mutex);
+      txnids.insert(id);
+      pthread_mutex_unlock(&mutex);
+    }
+  
+    void del_id(const std::string &id)
+    {
+      pthread_mutex_lock(&mutex);
+      /*
+       * It's likely that XA PREPARE not executed so id not found.
+       * */
+      Txnids_t::iterator i = txnids.find(id);
+      if (i != txnids.end())
+        txnids.erase(i);
+      pthread_mutex_unlock(&mutex);
+    }
+  
+    void serialize(std::string &id);
+  };
+
+  const static size_t NSLOTS = 1024;
+
+  Slot m_slots[NSLOTS];
+  uint hash_slot(const std::string &id)
+  {
+    return std::hash<std::string>{}(id) % NSLOTS;
+  }
+public:
+  Prepared_xa_txnids()
+  {
+  }
+  ~Prepared_xa_txnids()
+  {
+  }
+
+  void add_id(const std::string &id)
+  {
+    m_slots[hash_slot(id)].add_id(id);
+  }
+  
+  void del_id(const std::string &id)
+  {
+    m_slots[hash_slot(id)].del_id(id);
+  }
+
+  void serialize(std::string &id);
+
+  void from_recovery(Txnids_t &prepared);
+
+  void from_recovery(Txnids_t &prepared, const Txnids_t &committed,
+              const Txnids_t &aborted);
+  static int parse(const char *str, Txnids_t &ids);
+};
+
+extern Prepared_xa_txnids prepared_xa_txnids;
 
 #endif /* XA_AUX_H */

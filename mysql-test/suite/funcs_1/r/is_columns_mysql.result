@@ -65,6 +65,7 @@ def	mysql	general_log	thread_id	3	NULL	NO	bigint	NULL	NULL	20	0	NULL	NULL	NULL	b
 def	mysql	general_log	server_id	4	NULL	NO	int	NULL	NULL	10	0	NULL	NULL	NULL	int(10) unsigned			select,insert,update,references			NULL
 def	mysql	general_log	command_type	5	NULL	NO	varchar	64	192	NULL	NULL	NULL	utf8	utf8_general_ci	varchar(64)			select,insert,update,references			NULL
 def	mysql	general_log	argument	6	NULL	NO	mediumblob	16777215	16777215	NULL	NULL	NULL	NULL	NULL	mediumblob			select,insert,update,references			NULL
+def	mysql	general_log	extra_info	7	NULL	NO	varchar	255	255	NULL	NULL	NULL	latin1	latin1_swedish_ci	varchar(255)			select,insert,update,references			NULL
 def	mysql	global_grants	USER	1		NO	char	32	96	NULL	NULL	NULL	utf8	utf8_bin	char(32)	PRI		select,insert,update,references			NULL
 def	mysql	global_grants	HOST	2		NO	char	255	255	NULL	NULL	NULL	ascii	ascii_general_ci	char(255)	PRI		select,insert,update,references			NULL
 def	mysql	global_grants	PRIV	3		NO	char	32	96	NULL	NULL	NULL	utf8	utf8_general_ci	char(32)	PRI		select,insert,update,references			NULL
@@ -206,6 +207,8 @@ def	mysql	slow_log	insert_id	9	NULL	NO	int	NULL	NULL	10	0	NULL	NULL	NULL	int(11)
 def	mysql	slow_log	server_id	10	NULL	NO	int	NULL	NULL	10	0	NULL	NULL	NULL	int(10) unsigned			select,insert,update,references			NULL
 def	mysql	slow_log	sql_text	11	NULL	NO	mediumblob	16777215	16777215	NULL	NULL	NULL	NULL	NULL	mediumblob			select,insert,update,references			NULL
 def	mysql	slow_log	thread_id	12	NULL	NO	bigint	NULL	NULL	20	0	NULL	NULL	NULL	bigint(21) unsigned			select,insert,update,references			NULL
+def	mysql	slow_log	global_conn_id	13	NULL	NO	int	NULL	NULL	10	0	NULL	NULL	NULL	int(10) unsigned			select,insert,update,references			NULL
+def	mysql	slow_log	comp_node_id	14	NULL	NO	int	NULL	NULL	10	0	NULL	NULL	NULL	int(10) unsigned			select,insert,update,references			NULL
 def	mysql	tables_priv	Host	1		NO	char	255	255	NULL	NULL	NULL	ascii	ascii_general_ci	char(255)	PRI		select,insert,update,references			NULL
 def	mysql	tables_priv	Db	2		NO	char	64	192	NULL	NULL	NULL	utf8	utf8_bin	char(64)	PRI		select,insert,update,references			NULL
 def	mysql	tables_priv	User	3		NO	char	32	96	NULL	NULL	NULL	utf8	utf8_bin	char(32)	PRI		select,insert,update,references			NULL
@@ -295,6 +298,7 @@ COL_CML	DATA_TYPE	CHARACTER_SET_NAME	COLLATION_NAME
 1.0000	blob	NULL	NULL
 1.0000	mediumblob	NULL	NULL
 1.0000	char	ascii	ascii_general_ci
+1.0000	varchar	latin1	latin1_swedish_ci
 1.0000	text	utf8	utf8_bin
 1.0000	mediumtext	utf8	utf8_general_ci
 1.0000	text	utf8	utf8_general_ci
@@ -411,6 +415,7 @@ NULL	mysql	general_log	thread_id	bigint	NULL	NULL	NULL	NULL	bigint(21) unsigned
 NULL	mysql	general_log	server_id	int	NULL	NULL	NULL	NULL	int(10) unsigned
 3.0000	mysql	general_log	command_type	varchar	64	192	utf8	utf8_general_ci	varchar(64)
 1.0000	mysql	general_log	argument	mediumblob	16777215	16777215	NULL	NULL	mediumblob
+1.0000	mysql	general_log	extra_info	varchar	255	255	latin1	latin1_swedish_ci	varchar(255)
 3.0000	mysql	global_grants	USER	char	32	96	utf8	utf8_bin	char(32)
 1.0000	mysql	global_grants	HOST	char	255	255	ascii	ascii_general_ci	char(255)
 3.0000	mysql	global_grants	PRIV	char	32	96	utf8	utf8_general_ci	char(32)
@@ -552,6 +557,8 @@ NULL	mysql	slow_log	insert_id	int	NULL	NULL	NULL	NULL	int(11)
 NULL	mysql	slow_log	server_id	int	NULL	NULL	NULL	NULL	int(10) unsigned
 1.0000	mysql	slow_log	sql_text	mediumblob	16777215	16777215	NULL	NULL	mediumblob
 NULL	mysql	slow_log	thread_id	bigint	NULL	NULL	NULL	NULL	bigint(21) unsigned
+NULL	mysql	slow_log	global_conn_id	int	NULL	NULL	NULL	NULL	int(10) unsigned
+NULL	mysql	slow_log	comp_node_id	int	NULL	NULL	NULL	NULL	int(10) unsigned
 1.0000	mysql	tables_priv	Host	char	255	255	ascii	ascii_general_ci	char(255)
 3.0000	mysql	tables_priv	Db	char	64	192	utf8	utf8_bin	char(64)
 3.0000	mysql	tables_priv	User	char	32	96	utf8	utf8_bin	char(32)

@@ -5267,6 +5267,7 @@ longlong Item_func_sleep::val_int() {
   DEBUG_SYNC(current_thd, "func_sleep_before_sleep");
 
   error = 0;
+  thd->set_long_svc(true);
   thd_wait_begin(thd, THD_WAIT_SLEEP);
   while (!thd->killed) {
     error = timed_cond.wait(&cond, &LOCK_item_func_sleep);
@@ -5274,6 +5275,7 @@ longlong Item_func_sleep::val_int() {
     error = 0;
   }
   thd_wait_end(thd);
+  thd->set_long_svc(false);
   mysql_mutex_unlock(&LOCK_item_func_sleep);
   thd->EXIT_COND(NULL);
 

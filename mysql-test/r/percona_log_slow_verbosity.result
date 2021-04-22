@@ -11,7 +11,7 @@ a
 log_slow_verbosity='microtime,innodb,query_plan':
 [log_grep.inc] file: percona.slow_extended.log_slow_verbosity_0 pattern: ^# Schema: .+  Last_errno: \d+  Killed: \d+$
 [log_grep.inc] lines:   2
-[log_grep.inc] file: percona.slow_extended.log_slow_verbosity_0 pattern: ^#.*Rows_affected: \d+$
+[log_grep.inc] file: percona.slow_extended.log_slow_verbosity_0 pattern: ^#.*Rows_affected: \d+
 [log_grep.inc] lines:   2
 [log_grep.inc] file: percona.slow_extended.log_slow_verbosity_0 pattern: ^# Bytes_sent: \d+.*$
 [log_grep.inc] lines:   2
@@ -50,7 +50,7 @@ SELECT 1;
 log_slow_verbosity='microtime,innodb,query_plan':
 [log_grep.inc] file: percona.slow_extended.log_slow_verbosity_1 pattern: ^# Schema: .+  Last_errno: \d+  Killed: \d+$ expected_matches: 2
 [log_grep.inc] found expected match count: 2
-[log_grep.inc] file: percona.slow_extended.log_slow_verbosity_1 pattern: ^#.*Rows_affected: \d+$ expected_matches: 2
+[log_grep.inc] file: percona.slow_extended.log_slow_verbosity_1 pattern: ^#.*Rows_affected: \d+ expected_matches: 2
 [log_grep.inc] found expected match count: 2
 [log_grep.inc] file: percona.slow_extended.log_slow_verbosity_1 pattern: ^# Bytes_sent: \d+.*$ expected_matches: 2
 [log_grep.inc] found expected match count: 2
@@ -87,7 +87,7 @@ INSERT INTO t1 VALUE(1);
 log_slow_verbosity='microtime':
 [log_grep.inc] file: percona.slow_extended.log_slow_verbosity_2 pattern: ^# Schema: .+  Last_errno: \d+  Killed: \d+$ expected_matches: 2
 [log_grep.inc] found expected match count: 2
-[log_grep.inc] file: percona.slow_extended.log_slow_verbosity_2 pattern: ^#.*Rows_affected: \d+$ expected_matches: 2
+[log_grep.inc] file: percona.slow_extended.log_slow_verbosity_2 pattern: ^#.*Rows_affected: \d+ expected_matches: 2
 [log_grep.inc] found expected match count: 2
 [log_grep.inc] file: percona.slow_extended.log_slow_verbosity_2 pattern: ^# Bytes_sent: \d+.*$ expected_matches: 2
 [log_grep.inc] found expected match count: 2
@@ -124,7 +124,7 @@ INSERT INTO t1 VALUE(2);
 log_slow_verbosity='query_plan':
 [log_grep.inc] file: percona.slow_extended.log_slow_verbosity_3 pattern: ^# Schema: .+  Last_errno: \d+  Killed: \d+$ expected_matches: 2
 [log_grep.inc] found expected match count: 2
-[log_grep.inc] file: percona.slow_extended.log_slow_verbosity_3 pattern: ^#.*Rows_affected: \d+$ expected_matches: 2
+[log_grep.inc] file: percona.slow_extended.log_slow_verbosity_3 pattern: ^#.*Rows_affected: \d+ expected_matches: 2
 [log_grep.inc] found expected match count: 2
 [log_grep.inc] file: percona.slow_extended.log_slow_verbosity_3 pattern: ^# Bytes_sent: \d+.*$ expected_matches: 2
 [log_grep.inc] found expected match count: 2

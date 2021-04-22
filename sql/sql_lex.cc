@@ -2018,6 +2018,7 @@ SELECT_LEX_UNIT::SELECT_LEX_UNIT(enum_parsing_context parsing_context)
     case CTX_WHERE:
     case CTX_DERIVED:
     case CTX_NONE:  // A subquery in a non-select
+    case CTX_RETURNING_LIST:
       explain_marker = parsing_context;
       break;
     default:

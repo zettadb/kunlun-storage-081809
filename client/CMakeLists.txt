@@ -101,6 +101,7 @@ MYSQL_ADD_EXECUTABLE(mysqlbinlog
   ${CMAKE_SOURCE_DIR}/sql/binlog_reader.cc
   ${CMAKE_SOURCE_DIR}/sql/stream_cipher.cc
   ${CMAKE_SOURCE_DIR}/sql/rpl_log_encryption.cc
+  ${CMAKE_SOURCE_DIR}/sql/xa_utils.cc
 
   DEPENDENCIES GenError
   LINK_LIBRARIES perconaserverclient client_base binlogevents_static

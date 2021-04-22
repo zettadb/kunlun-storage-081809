@@ -53,6 +53,8 @@ typedef port_event_t native_event;
 for stall detection to kick in */
 #define THREADPOOL_CREATE_THREADS_ON_WAIT
 
+extern int print_extra_info;
+
 /* Possible values for thread_pool_high_prio_mode */
 const char *threadpool_high_prio_mode_names[] = {"transactions", "statements",
                                                  "none", NullS};
@@ -112,6 +114,8 @@ struct connection_t {
   connection_t *next_in_queue;
   connection_t **prev_in_queue;
   ulonglong abs_wait_timeout;
+  // dzw: when this request was put into job queue of its thread group, to calc latency.
+  ulonglong when_enqueued;
   bool logged_in;
   bool bound_to_poll_descriptor;
   bool waiting;
@@ -179,7 +183,7 @@ static int create_worker(thread_group_t *thread_group,
                          bool admin_connection = false) noexcept;
 static void *worker_main(void *param);
 static void check_stall(thread_group_t *thread_group);
-static void connection_abort(connection_t *connection);
+static void connection_abort(connection_t *connection, const char *extra_info);
 static void set_next_timeout_check(ulonglong abstime);
 static void print_pool_blocked_message(bool) noexcept;
 
@@ -446,6 +450,8 @@ class Thd_timeout_checker : public Do_THD_Impl {
       mysql_mutex_lock(&thd->LOCK_thd_data);
       thd->killed = THD::KILL_CONNECTION;
       tp_post_kill_notification(thd);
+	  if (print_extra_info)
+        sql_print_warning("Connection idle timeout and connection is killed in tp_post_kill_notification().");
       mysql_mutex_unlock(&thd->LOCK_thd_data);
     } else {
       set_next_timeout_check(connection->abs_wait_timeout);
@@ -701,8 +707,17 @@ static connection_t *listener(thread_group_t *thread_group) {
       and put the rest into the queue. If listener_pick_event is not set, all
       events go to the queue.
     */
+    ulonglong now_ts = my_microsecond_getsystime();
+    /*
+      If listener_picks_event is set, listener thread will handle first event,
+      and put the rest into the queue. If listener_pick_event is not set, all
+      events go to the queue.
+    */
     for (int i = (listener_picks_event) ? 1 : 0; i < cnt; i++) {
       connection_t *c = (connection_t *)native_event_get_userdata(&ev[i]);
+      // The loop is very quick, get systime is relatively more costly than the
+      // precision got from true my_microsecond_getsystime() calls here.
+      c->when_enqueued= now_ts;
       if (connection_is_high_prio(*c)) {
         c->tickets--;
         thread_group->high_prio_queue.push_back(c);
@@ -715,6 +730,7 @@ static connection_t *listener(thread_group_t *thread_group) {
     if (listener_picks_event) {
       /* Handle the first event. */
       retval = (connection_t *)native_event_get_userdata(&ev[0]);
+      retval->when_enqueued= 0; 
       mysql_mutex_unlock(&thread_group->mutex);
       break;
     }
@@ -984,6 +1000,7 @@ static void queue_put(thread_group_t *thread_group, connection_t *connection) {
 
   mysql_mutex_lock(&thread_group->mutex);
   connection->tickets = connection->thd->variables.threadpool_high_prio_tickets;
+  connection->when_enqueued= my_microsecond_getsystime();
   thread_group->queue.push_back(connection);
 
   if (thread_group->active_thread_count == 0)
@@ -1064,9 +1081,10 @@ static connection_t *get_event(worker_thread_t *current_thread,
           must either have a high priority ticket, or there must be not too many
           busy threads (as if it was coming from a low priority queue).
         */
-        if (connection_is_high_prio(*connection))
+        if (connection_is_high_prio(*connection)) {
+          connection->when_enqueued= 0;
           connection->tickets--;
-        else if (too_many_busy_threads(*thread_group)) {
+        } else if (too_many_busy_threads(*thread_group)) {
           /*
             Not eligible for high priority processing. Restore tickets and put
             it into the low priority queue.
@@ -1074,6 +1092,7 @@ static connection_t *get_event(worker_thread_t *current_thread,
 
           connection->tickets =
               connection->thd->variables.threadpool_high_prio_tickets;
+          connection->when_enqueued= my_microsecond_getsystime();
           thread_group->queue.push_back(connection);
           connection = nullptr;
         }
@@ -1180,6 +1199,7 @@ static connection_t *alloc_connection(THD *thd) noexcept {
     connection->logged_in = false;
     connection->bound_to_poll_descriptor = false;
     connection->abs_wait_timeout = ULLONG_MAX;
+    connection->when_enqueued= 0;
     connection->tickets = 0;
   }
   DBUG_RETURN(connection);
@@ -1241,8 +1261,25 @@ bool Thread_pool_connection_handler::add_connection(
   Terminate connection.
 */
 
-static void connection_abort(connection_t *connection) {
+static void connection_abort(connection_t *connection, const char *extra_info) {
   DBUG_ENTER("connection_abort");
+  const enum enum_server_command cur_cmd = connection->thd->conn_broken_cmd;
+  const enum enum_server_command cmd = connection->thd->get_command();
+  /*
+    Print abort connection message for diagnosis.
+  */
+  if (print_extra_info && (cur_cmd != COM_QUIT  && !(cur_cmd == COM_END && (cmd == COM_SLEEP || cmd == COM_CONNECT))))
+  {
+    sql_print_error("Connection aborted in threadpool. Connection info: %slogged in, %s; error: %s. Session info: %s",
+                    (connection->logged_in ? "" : "not "),
+                    (connection->waiting ? "idle" : "working"), extra_info,connection->thd->toString().c_str());
+  }
+  else if (print_extra_info > 1)
+  {
+    sql_print_warning("Connection aborted by client(cmd: %u). Connection info: %slogged in, %s; error: %s. Session info: %s",
+                      cur_cmd, (connection->logged_in ? "" : "not "),
+                      (connection->waiting ? "idle" : "working"), extra_info, connection->thd->toString().c_str());
+  }
   thread_group_t *group = connection->thread_group;
 
   threadpool_remove_connection(connection->thd);
@@ -1262,7 +1299,7 @@ static void connection_abort(connection_t *connection) {
 void tp_post_kill_notification(THD *thd) noexcept {
   DBUG_ENTER("tp_post_kill_notification");
   if (current_thd == thd || thd->system_thread) DBUG_VOID_RETURN;
-
+  thd->print_aborted_warning(0, "Connection read end closed in tp_post_kill_notification()");
   Vio *vio = thd->get_protocol_classic()->get_vio();
   if (vio) vio_cancel(vio, SHUT_RD);
   DBUG_VOID_RETURN;
@@ -1401,12 +1438,26 @@ static int start_io(connection_t *connection) {
 static void handle_event(connection_t *connection) {
   DBUG_ENTER("handle_event");
   int err;
-
+  const char *errmsg= "unknown error";
+ 
   if (!connection->logged_in) {
     err = threadpool_add_connection(connection->thd);
     connection->logged_in = true;
+    if (err)
+        errmsg= "threadpool_add_connection error";
   } else {
-    err = threadpool_process_request(connection->thd);
+    DBUG_EXECUTE_IF("simulate_tp_wq_congestion",
+                    if (connection->when_enqueued == 0)
+                      connection->when_enqueued = my_microsecond_getsystime();
+                    sleep(2););
+
+    connection->thd->usecs_in_q= (connection->when_enqueued > 0 ?
+        my_microsecond_getsystime() - connection->when_enqueued : 0);
+     err= threadpool_process_request(connection->thd);
+    connection->thd->usecs_in_q= 0;
+    connection->when_enqueued= 0;
+    if (err)
+        errmsg= "threadpool_process_request error";
   }
 
   if (err) goto end;
@@ -1415,7 +1466,7 @@ static void handle_event(connection_t *connection) {
   err = start_io(connection);
 
 end:
-  if (err) connection_abort(connection);
+  if (err) connection_abort(connection, errmsg);
 
   DBUG_VOID_RETURN;
 }

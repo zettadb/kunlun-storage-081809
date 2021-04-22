@@ -137,6 +137,8 @@ class Sql_cmd_delete final : public Sql_cmd_dml {
     optimization, use the TABLE_LIST::updating property instead.
   */
   SQL_I_List<TABLE_LIST> *delete_tables;
+ public:
+  List<Item> returning_list;
 };
 
 #endif /* SQL_DELETE_INCLUDED */

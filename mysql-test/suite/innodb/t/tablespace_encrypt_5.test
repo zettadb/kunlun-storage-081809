@@ -117,6 +117,7 @@ let $wait_condition = select count(*) = 0
 --echo # After restart/recovery, check that Encryption was roll-forward and
 --echo # tablespace file is encrypted now
 --source include/if_encrypted.inc
+select * from t1;
 
 --echo ############################################################
 --echo # ALTER TABLESPACE 4 :    Encrypted => Unencrypted         #

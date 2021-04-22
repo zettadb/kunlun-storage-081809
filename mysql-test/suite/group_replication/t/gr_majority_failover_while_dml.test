@@ -50,6 +50,8 @@ CREATE PROCEDURE dml_operations()
 delimiter ;$$
 --echo
 
+select @@autocommit;
+
 --echo ----call procedure----
 --send call dml_operations()
 --echo
@@ -61,7 +63,8 @@ set sql_log_bin=0;
 call mtr.add_suppression(".*Slave SQL for channel 'group_replication_applier': ... The slave coordinator and worker threads are stopped, possibly leaving data in inconsistent state*");
 call mtr.add_suppression("Error in Log_event::read_log_event()");
 set sql_log_bin=1;
-
+--sleep 5
+select*from t1;
 # Wait until some data is entered into table t1 to ensure that the server2
 # will get killed while there are dml operations running on server1
 --let $wait_condition= SELECT COUNT(*) >20 FROM t1

@@ -1165,6 +1165,12 @@ class SELECT_LEX {
   List<Item> item_list;
   bool is_item_list_lookup;
 
+  /**
+    List of expressions to return in returning list, used by
+    UPDATE, DELETE statements.
+  */
+  List<Item>          returning_list;
+
   /// Number of GROUP BY expressions added to all_fields
   int hidden_group_field_count;
 
@@ -1844,6 +1850,7 @@ class SELECT_LEX {
   /// Merge derived table into query block
  public:
   bool merge_derived(THD *thd, TABLE_LIST *derived_table);
+  bool setup_wild_in_returning(THD*);
   /// Remove semijoin condition for this query block
   void clear_sj_expressions(NESTED_JOIN *nested_join);
   ///  Build semijoin condition for th query block

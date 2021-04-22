@@ -1,0 +1,1024 @@
+use test;
+create table t1(a serial primary key, b int);
+insert into t1(b) values(1);
+begin;
+insert into t1(b) values(2);
+commit;
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a1';
+insert into t1(b) values(3);
+xa end 'a1';
+xa prepare 'a1' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a1
+xa recover;
+formatID	gtrid_length	bqual_length	data
+show global status like 'innodb_num_aborted_txns_no_gtid';
+Variable_name	Value
+Innodb_num_aborted_txns_no_gtid	0
+show global status like 'innodb_num_recovered_txns';
+Variable_name	Value
+Innodb_num_recovered_txns	1
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a11';
+update t1 set b=b+1 where a=1;
+xa end 'a11';
+xa prepare 'a11' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a11
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a2';
+insert into t1(b) values(3);
+update t1 set b=b+1 where a=2;
+xa end 'a2';
+xa prepare 'a2' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a2
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a3';
+insert into t11(b) values(1);
+insert into t1(b) values(11);
+xa end 'a3';
+xa prepare 'a3' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a3
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a31';
+delete from t11 where a=2;
+update t11 set b=b+1 where a=1;
+update t1 set b=b+1 where a=1;
+xa end 'a31';
+xa prepare 'a31' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a31
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a32';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+update t1 set b=b+1 where a=1;
+xa end 'a32';
+xa prepare 'a32' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a32
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a33';
+insert into t11(b) values(1);
+insert into t1(b) values(11);
+xa end 'a33';
+xa prepare 'a33' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a33
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a331';
+insert into t11(b) values(1);
+update t1 set b=b+1 where a=1;
+xa end 'a331';
+xa prepare 'a331' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a331
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a332';
+insert into t11(b) values(4);
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a332';
+xa prepare 'a332' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a332
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a34';
+delete from t11 where a=2;
+update t11 set b=b+1 where a=1;
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a34';
+xa prepare 'a34' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a34
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a333';
+update t11 set b=b+1 where a=1;
+insert into t1(b) values(11);
+xa end 'a333';
+xa prepare 'a333' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a333
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a334';
+update t11 set b=b+1 where a=1;
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a334';
+xa prepare 'a334' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a334
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a35';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+insert into t1(b) values(11);
+xa end 'a35';
+xa prepare 'a35' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a35
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a351';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a351';
+xa prepare 'a351' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a351
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a352';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a352';
+xa prepare 'a352' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a352
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+drop table t1;
+use test;
+create table t1(a serial primary key, b int);
+insert into t1(b) values(1);
+begin;
+insert into t1(b) values(2);
+commit;
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a1';
+insert into t1(b) values(3);
+xa end 'a1';
+xa prepare 'a1' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a1
+xa recover;
+formatID	gtrid_length	bqual_length	data
+show global status like 'innodb_num_aborted_txns_no_gtid';
+Variable_name	Value
+Innodb_num_aborted_txns_no_gtid	1
+show global status like 'innodb_num_recovered_txns';
+Variable_name	Value
+Innodb_num_recovered_txns	0
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a11';
+update t1 set b=b+1 where a=1;
+xa end 'a11';
+xa prepare 'a11' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a11
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a2';
+insert into t1(b) values(3);
+update t1 set b=b+1 where a=2;
+xa end 'a2';
+xa prepare 'a2' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a2
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a3';
+insert into t11(b) values(1);
+insert into t1(b) values(11);
+xa end 'a3';
+xa prepare 'a3' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a3
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a31';
+delete from t11 where a=2;
+update t11 set b=b+1 where a=1;
+update t1 set b=b+1 where a=1;
+xa end 'a31';
+xa prepare 'a31' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a31
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a32';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+update t1 set b=b+1 where a=1;
+xa end 'a32';
+xa prepare 'a32' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a32
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a33';
+insert into t11(b) values(1);
+insert into t1(b) values(11);
+xa end 'a33';
+xa prepare 'a33' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a33
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a331';
+insert into t11(b) values(1);
+update t1 set b=b+1 where a=1;
+xa end 'a331';
+xa prepare 'a331' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a331
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a332';
+insert into t11(b) values(4);
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a332';
+xa prepare 'a332' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a332
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a34';
+delete from t11 where a=2;
+update t11 set b=b+1 where a=1;
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a34';
+xa prepare 'a34' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a34
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a333';
+update t11 set b=b+1 where a=1;
+insert into t1(b) values(11);
+xa end 'a333';
+xa prepare 'a333' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a333
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a334';
+update t11 set b=b+1 where a=1;
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a334';
+xa prepare 'a334' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a334
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a35';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+insert into t1(b) values(11);
+xa end 'a35';
+xa prepare 'a35' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a35
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a351';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a351';
+xa prepare 'a351' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a351
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a352';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a352';
+xa prepare 'a352' ;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a352
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+drop table t1;
+use test;
+create table t1(a serial primary key, b int);
+insert into t1(b) values(1);
+begin;
+insert into t1(b) values(2);
+commit;
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a1';
+insert into t1(b) values(3);
+xa end 'a1';
+xa commit 'a1' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a1
+xa recover;
+formatID	gtrid_length	bqual_length	data
+show global status like 'innodb_num_aborted_txns_no_gtid';
+Variable_name	Value
+Innodb_num_aborted_txns_no_gtid	0
+show global status like 'innodb_num_recovered_txns';
+Variable_name	Value
+Innodb_num_recovered_txns	1
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a11';
+update t1 set b=b+1 where a=1;
+xa end 'a11';
+xa commit 'a11' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a11
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a2';
+insert into t1(b) values(3);
+update t1 set b=b+1 where a=2;
+xa end 'a2';
+xa commit 'a2' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a2
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a3';
+insert into t11(b) values(1);
+insert into t1(b) values(11);
+xa end 'a3';
+xa commit 'a3' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a3
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a31';
+delete from t11 where a=2;
+update t11 set b=b+1 where a=1;
+update t1 set b=b+1 where a=1;
+xa end 'a31';
+xa commit 'a31' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a31
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a32';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+update t1 set b=b+1 where a=1;
+xa end 'a32';
+xa commit 'a32' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a32
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a33';
+insert into t11(b) values(1);
+insert into t1(b) values(11);
+xa end 'a33';
+xa commit 'a33' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a33
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a331';
+insert into t11(b) values(1);
+update t1 set b=b+1 where a=1;
+xa end 'a331';
+xa commit 'a331' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a331
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a332';
+insert into t11(b) values(4);
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a332';
+xa commit 'a332' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a332
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a34';
+delete from t11 where a=2;
+update t11 set b=b+1 where a=1;
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a34';
+xa commit 'a34' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a34
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a333';
+update t11 set b=b+1 where a=1;
+insert into t1(b) values(11);
+xa end 'a333';
+xa commit 'a333' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a333
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a334';
+update t11 set b=b+1 where a=1;
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a334';
+xa commit 'a334' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a334
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a35';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+insert into t1(b) values(11);
+xa end 'a35';
+xa commit 'a35' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a35
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a351';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a351';
+xa commit 'a351' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a351
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_after_flush_engine_log' to @@GLOBAL.debug
+xa start 'a352';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a352';
+xa commit 'a352' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a352
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+drop table t1;
+use test;
+create table t1(a serial primary key, b int);
+insert into t1(b) values(1);
+begin;
+insert into t1(b) values(2);
+commit;
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a1';
+insert into t1(b) values(3);
+xa end 'a1';
+xa commit 'a1' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a1
+xa recover;
+formatID	gtrid_length	bqual_length	data
+show global status like 'innodb_num_aborted_txns_no_gtid';
+Variable_name	Value
+Innodb_num_aborted_txns_no_gtid	0
+show global status like 'innodb_num_recovered_txns';
+Variable_name	Value
+Innodb_num_recovered_txns	1
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a11';
+update t1 set b=b+1 where a=1;
+xa end 'a11';
+xa commit 'a11' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a11
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a2';
+insert into t1(b) values(3);
+update t1 set b=b+1 where a=2;
+xa end 'a2';
+xa commit 'a2' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a2
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a3';
+insert into t11(b) values(1);
+insert into t1(b) values(11);
+xa end 'a3';
+xa commit 'a3' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a3
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a31';
+delete from t11 where a=2;
+update t11 set b=b+1 where a=1;
+update t1 set b=b+1 where a=1;
+xa end 'a31';
+xa commit 'a31' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a31
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a32';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+update t1 set b=b+1 where a=1;
+xa end 'a32';
+xa commit 'a32' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a32
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a33';
+insert into t11(b) values(1);
+insert into t1(b) values(11);
+xa end 'a33';
+xa commit 'a33' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a33
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a331';
+insert into t11(b) values(1);
+update t1 set b=b+1 where a=1;
+xa end 'a331';
+xa commit 'a331' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a331
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a332';
+insert into t11(b) values(4);
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a332';
+xa commit 'a332' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a332
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a34';
+delete from t11 where a=2;
+update t11 set b=b+1 where a=1;
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a34';
+xa commit 'a34' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a34
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a333';
+update t11 set b=b+1 where a=1;
+insert into t1(b) values(11);
+xa end 'a333';
+xa commit 'a333' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a333
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a334';
+update t11 set b=b+1 where a=1;
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a334';
+xa commit 'a334' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a334
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a35';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+insert into t1(b) values(11);
+xa end 'a35';
+xa commit 'a35' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a35
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a351';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a351';
+xa commit 'a351' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a351
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+create temporary table t11(a serial primary key, b int);
+insert into t11(b) values(1),(2),(3);
+include/rpl_set_gtid_mode.inc [ON on servers 1]
+# Adding debug point 'crash_before_flush_binlog' to @@GLOBAL.debug
+xa start 'a352';
+insert into t11(b) values(4);
+update t11 set b=b+1 where a=2;
+insert into t1(b) values(11);
+update t1 set b=b+1 where a=1;
+delete from t1 where a=2;
+xa end 'a352';
+xa commit 'a352' one phase;
+ERROR HY000: Lost connection to MySQL server during query
+# restart
+expect no a352
+xa recover;
+formatID	gtrid_length	bqual_length	data
+include/assert.inc [innodb txn recovery checks]
+include/assert.inc [innodb txn recovery checks]
+drop table t1;

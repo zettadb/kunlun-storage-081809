@@ -1323,7 +1323,6 @@ static SHOW_VAR innodb_status_variables[] = {
     {"encryption_redo_key_version",
      (char *)&export_vars.innodb_redo_key_version, SHOW_LONGLONG,
      SHOW_SCOPE_GLOBAL},
-    {NullS, NullS, SHOW_LONG, SHOW_SCOPE_GLOBAL},
     /* Encryption */
     {"encryption_rotation_pages_read_from_cache",
      (char *)&export_vars.innodb_encryption_rotation_pages_read_from_cache,
@@ -1347,6 +1346,10 @@ static SHOW_VAR innodb_status_variables[] = {
      SHOW_LONGLONG, SHOW_SCOPE_GLOBAL},
     {"num_pages_decrypted", (char *)&export_vars.innodb_pages_decrypted,
      SHOW_LONGLONG, SHOW_SCOPE_GLOBAL},
+    {"num_recovered_txns", (char *)&export_vars.innodb_num_recovered_txns,
+     SHOW_LONG, SHOW_SCOPE_GLOBAL},
+    {"num_aborted_txns_no_gtid", (char *)&export_vars.innodb_num_aborted_txns_no_gtid,
+     SHOW_LONG, SHOW_SCOPE_GLOBAL},
     {NullS, NullS, SHOW_LONG, SHOW_SCOPE_GLOBAL}};
 
 /** Handling the shared INNOBASE_SHARE structure that is needed to provide table
@@ -1536,8 +1539,7 @@ static int innobase_xa_prepare(handlerton *hton, /*!< in: InnoDB handlerton */
  @return number of prepared transactions stored in xid_list */
 static int innobase_xa_recover(
     handlerton *hton,         /*!< in: InnoDB handlerton */
-    XA_recover_txn *txn_list, /*!< in/out: prepared transactions */
-    uint len,                 /*!< in: number of slots in xid_list */
+    XA_recover_txn_list *txn_list, /*!< in/out: prepared transactions */
     MEM_ROOT *mem_root);      /*!< in: memory for table names */
 /** This function is used to commit one X/Open XA distributed transaction
  which is in the prepared state
@@ -20553,21 +20555,40 @@ static int innobase_xa_prepare(handlerton *hton, /*!< in: InnoDB handlerton */
   return (0);
 }
 
+void store_prepared_xa_gtid(trx_t *trx);
+void add_gtid_to_persistor(trx_t *trx);
+void innobase_store_prepared_xa_gtid(THD *thd) {
+
+  trx_t *trx = check_trx_exists(thd);
+  innobase_srv_conc_force_exit_innodb(trx);
+
+  TrxInInnoDB trx_in_innodb(trx);
+  store_prepared_xa_gtid(trx);
+}
+
+void innobase_add_gtid_to_persistor(THD *thd) {
+
+  trx_t *trx = check_trx_exists(thd);
+  innobase_srv_conc_force_exit_innodb(trx);
+
+  TrxInInnoDB trx_in_innodb(trx);
+  add_gtid_to_persistor(trx);
+}
+
 /** This function is used to recover X/Open XA distributed transactions.
  @return number of prepared transactions stored in xid_list */
 static int innobase_xa_recover(
     handlerton *hton,         /*!< in: InnoDB handlerton */
-    XA_recover_txn *txn_list, /*!< in/out: prepared transactions */
-    uint len,                 /*!< in: number of slots in xid_list */
+    XA_recover_txn_list *txn_list, /*!< in/out: prepared transactions */
     MEM_ROOT *mem_root)       /*!< in: memory for table names */
 {
   DBUG_ASSERT(hton == innodb_hton_ptr);
 
-  if (len == 0 || txn_list == nullptr) {
+  if (txn_list == nullptr) {
     return (0);
   }
 
-  return (trx_recover_for_mysql(txn_list, len, mem_root));
+  return (trx_recover_for_mysql(txn_list, mem_root));
 }
 
 /** This function is used to commit one X/Open XA distributed transaction

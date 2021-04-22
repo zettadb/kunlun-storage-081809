@@ -1,0 +1,101 @@
+include/group_replication.inc [rpl_server_count=3]
+Warnings:
+Note	####	Sending passwords in plain text without SSL/TLS is extremely insecure.
+Note	####	Storing MySQL user name or password information in the master info repository is not secure and is therefore not recommended. Please consider using the USER and PASSWORD connection options for START SLAVE; see the 'START SLAVE Syntax' in the MySQL Manual for more information.
+[connection server1]
+
+# 1. Start GR on server1 & 2
+[connection server1]
+include/start_and_bootstrap_group_replication.inc
+[connection server2]
+include/start_group_replication.inc
+[connection server3]
+include/start_group_replication.inc
+
+# 2. Add some data to server1
+[connection server1]
+CREATE TABLE test.t1 (c1 INT NOT NULL PRIMARY KEY) ENGINE=InnoDB;
+set session debug='+d,crash_after_flush_binlog';
+XA START 'trx1';
+INSERT INTO test.t1 VALUES (1);
+XA END 'trx1';
+XA PREPARE 'trx1';
+ERROR HY000: Lost connection to MySQL server during query
+[connection server1]
+[connection server2]
+#expect trx1 prepared on server2
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+#wait until server2 executes the 'XA PREPARE' event.
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+include/rpl_gr_wait_for_number_of_members.inc
+[connection server3]
+#expect trx1 prepared on server3
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+#wait until server3 executes the 'XA PREPARE' event.
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+include/rpl_gr_wait_for_number_of_members.inc
+[connection server1]
+#expect trx1 prepared on server1
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+1	4	0	trx1
+include/start_group_replication.inc
+# Execute XA COMMIT 'trx1'; crash server1 where the binlog is written
+set session debug='+d,crash_after_flush_binlog';
+XA COMMIT 'trx1';
+ERROR HY000: Lost connection to MySQL server during query
+[connection server1]
+# Verify that trx1 has been committed on server2&3.
+[connection server2]
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+#wait until server2 executes the 'XA COMMIT' event.
+select*from t1;
+c1
+1
+include/rpl_gr_wait_for_number_of_members.inc
+[connection server3]
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+#wait until server3 executes the 'XA COMMIT' event.
+select*from t1;
+c1
+1
+include/rpl_gr_wait_for_number_of_members.inc
+[connection server1]
+#check that trx1 is committed on server1
+XA RECOVER;
+formatID	gtrid_length	bqual_length	data
+select*from t1;
+c1
+1
+include/start_group_replication.inc
+[connection server2]
+[connection server3]
+[connection server1]
+select*from t1;
+c1
+1
+INSERT INTO test.t1 VALUES (3);
+select*from t1;
+c1
+1
+3
+[connection server2]
+select*from t1;
+c1
+1
+3
+[connection server3]
+select*from t1;
+c1
+1
+3

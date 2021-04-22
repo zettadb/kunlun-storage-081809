@@ -25,7 +25,7 @@
 #    events_bugs.test, events_time_zone.test
 #
 
-let $wait_counter= 300;
+let $wait_counter= 3000;
 if ($wait_timeout)
 {
   let $wait_counter= `SELECT $wait_timeout * 10`;

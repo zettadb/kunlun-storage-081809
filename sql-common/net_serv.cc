@@ -1832,3 +1832,10 @@ void my_net_set_retry_count(NET *net, uint retry_count) {
   net->retry_count = retry_count;
   if (net->vio) net->vio->retry_count = retry_count;
 }
+
+void print_net_to_string(const NET *net, char *buf, size_t buflen)
+{
+  snprintf(buf, buflen, "net info: {vio is %s null,fd:%d,reading_or_writing:%d,last_errno:%u,error:%d}",
+           net->vio ? "not" : "", net->fd, net->reading_or_writing,
+           net->last_errno, net->error);
+}
