@@ -1,0 +1,46 @@
+{
+    "group_uuid":"e6578c3a-547e-11ea-9780-981fd1bd410d",
+    "nodes":
+    [
+       {
+          "is_primary":true,
+          "ip": "127.0.0.1",
+          "port": 6001,
+          "xport": 60010,
+          "mgr_port": 60011,
+          "innodb_buffer_pool_size":"64MB",
+          "data_dir_path":"/data",
+          "log_dir_path":"/data/log",
+          "user":"abc",
+          "election_weight":50
+       },
+
+       {
+          "is_primary":false,
+          "ip": "127.0.0.1",
+          "port": 6002,
+          "xport": 60020,
+          "mgr_port": 60021,
+          "innodb_buffer_pool_size":"64MB",
+          "data_dir_path":"/data",
+          "log_dir_path":"/data/log",
+          "user":"abc",
+          "election_weight":50
+       },
+
+       {
+          "is_primary":false,
+          "ip": "127.0.0.1",
+          "port": 6003,
+          "xport": 60030,
+          "mgr_port": 60031,
+          "innodb_buffer_pool_size":"64MB",
+          "data_dir_path":"/data",
+          "log_dir_path":"/data/log",
+          "user":"abc",
+          "election_weight":50
+       }
+
+    ]
+}
+

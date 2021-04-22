@@ -1,0 +1,277 @@
+[mysql]
+prompt="instance_name \\R:\\m:\\s>"
+[client]
+port        = place_holder_port
+socket      = prod_dir/mysql.sock
+
+# Here follows entries for some specific programs
+[mysqld_safe]
+core-file-size=unlimited
+
+# The MySQL server
+[mysqld]
+early-plugin-load=keyring_file.so
+#keyring_file_data=data_dir/sys/xyz.frm
+core-file
+# required unique id between 1 and 2^32 - 1
+# defaults to 1 if master-host is not set
+# but will not function as a master if omitted
+bind_address    = place_holder_ip
+#mysqlx_bind_address = *
+
+port      = place_holder_port
+report-host=place_holder_ip
+# extra_port = place_holder_extra_port mysql8.0 doesn't have this var.
+mysqlx_port = place_holder_x_port
+
+local_infile=1
+#secure_auth=1
+#secure_file_priv=/dev/null can't do so otherwise install fails.
+#skip-symbolic-links it's now default and will be removed in future.
+
+socket      = prod_dir/mysql.sock
+mysqlx_socket = prod_dir/mysqlx.sock
+pid-file    = prod_dir/mysql.pid
+
+server-id=   place_holder_server_id
+shard_id= place_holder_shard_id
+cluster_id= place_holder_cluster_id
+
+#in a circular replication group topology, doing so may cause an endless loop 
+#replicate-same-server-id=1
+
+plugin-dir=base_dir/lib/plugin
+
+user=place_holder_user
+
+#rootdatadir=rootdatadir_arg
+#rootlogdir=rootlogdir_arg
+datadir     = data_dir
+#log=../dblogs/run/run.log
+slow_query_log_file = log_dir/slowquery.sql
+#innodb_log_arch_dir = log_arch
+#replicate_wild_ignore_table = mysql.%
+
+#log dir is=log_dir
+log-bin  = log_bin_arg/binlog.log
+relay-log = log_relay/relay.log
+log-error = log_dir/mysqld.err
+
+# Point the following paths to a dedicated disk
+
+binlog_format=row
+
+default-storage-engine = innodb
+lc-messages-dir     = base_dir/share
+character-set-server = UTF8MB4
+collation-server = utf8mb4_0900_ai_ci
+#slave_rows_search_algorithms="INDEX_SCAN,HASH_SCAN"  deprecated
+
+# Uncomment the following if you are using InnoDB tables
+innodb_log_group_home_dir = log_arch
+tmpdir = tmp_dir
+innodb_data_home_dir = innodb_dir
+
+slow_query_log=ON
+table_open_cache = 10240
+innodb_open_files   =   10240
+open_files_limit    =   100000 
+max_prepared_stmt_count=200000
+performance_schema=on
+enforce_gtid_consistency = ON
+gtid_mode = ON
+skip-slave-start 
+slave_skip_errors=1397
+slave_preserve_commit_order=ON
+
+
+# the default 60 seconds sometimes isn't sufficient, and if net write times out,
+# the client connection breaks
+net_write_timeout=300
+# likewise, the default 30 seconds should be enlarged.
+net_read_timeout=150
+
+transaction-isolation=READ-COMMITTED
+
+#notify_group_commit_follower_wait=TRUE
+log_timestamps=SYSTEM
+binlog_checksum=NONE
+default_tmp_storage_engine=innodb
+innodb_data_file_path=ibdata1:64M:autoextend
+innodb_empty_free_list_algorithm=legacy
+innodb_flush_method=O_DIRECT
+#innodb_large_prefix=ON
+innodb_log_compressed_pages=OFF
+innodb_stats_auto_recalc=ON
+innodb_stats_persistent=ON
+innodb_strict_mode=OFF
+innodb_thread_sleep_delay=5000
+innodb_adaptive_max_sleep_delay=100000
+innodb_flush_log_at_trx_commit=1
+innodb_buffer_pool_size = place_holder_innodb_buffer_pool_size
+innodb_buffer_pool_instances = 2
+innodb_log_buffer_size = 2MB
+join_buffer_size = 2097152
+read_rnd_buffer_size = 2097152
+sort_buffer_size = 2097152
+read_buffer_size = 2097152
+key_buffer_size = 134217728
+innodb_purge_threads = 16
+innodb_read_io_threads = 16
+innodb_write_io_threads = 16
+innodb_lock_wait_timeout = 20 
+
+max_connections = 10000
+mysqlx_max_connections = 1000
+
+# extra_max_connections   =   32 no such var in mysql8.0
+innodb_fill_factor = 70
+innodb_flush_neighbors  =   0
+innodb_io_capacity  =   10000
+innodb_io_capacity_max  =   20000
+innodb_log_files_in_group   =   2
+innodb_log_file_size    =   16MB
+innodb_max_dirty_pages_pct  =   70
+innodb_max_purge_lag    =   500000
+innodb_purge_batch_size =   1000
+innodb_thread_concurrency   =   64
+innodb_adaptive_hash_index_parts = 256
+innodb_adaptive_hash_index=OFF # if ON, tpcc TPS drops over half.
+innodb_doublewrite=1
+innodb_lru_scan_depth=1024
+innodb_print_all_deadlocks=ON
+innodb_buffer_pool_dump_at_shutdown=OFF
+innodb_buffer_pool_load_at_startup=OFF
+innodb_temp_data_file_path=ibtmp1:16M:autoextend:max:30G
+
+# below setting will be made effective in real config files.
+#skip_name_resolve=on
+
+
+log_bin_trust_function_creators=ON
+log_statements_unsafe_for_binlog = off
+#sync_frm = ON
+
+lock_wait_timeout   =   5
+long_query_time =   1
+lower_case_table_names  =   1
+max_allowed_packet  =   1073741824
+mysqlx_max_allowed_packet = 1073741824
+max_binlog_size =   104857600
+max_connect_errors  =   2000
+max_heap_table_size =   33554432
+max_relay_log_size  =   104857600
+#metadata_locks_hash_instances   =   128
+#myisam_sort_buffer_size =   4194304
+query_alloc_block_size  =   16384
+#query_cache_size    =   0
+query_prealloc_size =   24576
+slave_net_timeout   =   3600
+log_slave_updates=on
+slave_parallel_type=logical_clock
+binlog_transaction_dependency_tracking = writeset_session # writeset, commit_order
+binlog_transaction_dependency_history_size=1000000
+binlog_rows_query_log_events=true
+binlog_row_value_options=PARTIAL_JSON
+binlog_row_image=MINIMAL
+binlog_order_commits=OFF
+binlog_group_commit_sync_no_delay_count=7
+binlog_group_commit_sync_delay=300 #300us
+binlog_encryption=off # enable it if needs extreme data security.
+binlog_cache_size=256KB
+slave_parallel_workers=64
+innodb_sync_array_size=64
+sync_master_info    =   0
+sync_relay_log  =   0
+sync_relay_log_info =   0
+table_definition_cache  =   400
+thread_cache_size   =   8
+
+thread_pool_size=24 #same as cpu num,change when use cgroup
+
+# more enhancements for eager mode, more actively&aggressively taking requests
+# from queue, waking up&creating worker threads, etc.
+thread_pool_max_threads =   2000
+thread_pool_oversubscribe   =   10
+thread_pool_stall_limit =   50
+thread_stack    =   196608
+thread_handling =   2
+tmp_table_size  =   33554432
+
+# Remove leading # to set options mainly useful for reporting servers.
+# The server defaults are faster for transactions and fast SELECTs.
+# Adjust sizes as needed, experiment to find the optimal values.
+# join_buffer_size = 128M
+# sort_buffer_size = 2M
+# read_rnd_buffer_size = 2M 
+
+sql_mode=NO_ENGINE_SUBSTITUTION,STRICT_TRANS_TABLES
+master_info_repository =table
+relay_log_info_repository =table
+
+
+# rocksdb
+#plugin-load=rocksdb=ha_rocksdb.so;rocksdb_cfstats=ha_rocksdb.so;rocksdb_dbstats=ha_rocksdb.so;rocksdb_perf_context=ha_rocksdb.so;rocksdb_perf_context_global=ha_rocksdb.so;rocksdb_cf_options=ha_rocksdb.so;rocksdb_compaction_stats=ha_rocksdb.so;rocksdb_global_info=ha_rocksdb.so;rocksdb_ddl=ha_rocksdb.so;rocksdb_index_file_map=ha_rocksdb.so;rocksdb_locks=ha_rocksdb.so;rocksdb_trx=ha_rocksdb.so
+#rocksdb
+#default-storage-engine=rocksdb
+#default-tmp-storage-engine=InnoDB
+#rocksdb_max_open_files=-1
+#rocksdb_base_background_compactions=1
+#rocksdb_max_total_wal_size=4G
+#rocksdb_block_size=16384
+#rocksdb_block_cache_size=16G
+#rocksdb_table_cache_numshardbits=6
+#rocksdb_default_cf_options=write_buffer_size=128m;target_file_size_base=64m;max_bytes_for_level_base=512m;level0_file_num_compaction_trigger=4;level0_slowdown_writes_trigger=256;level0_stop_writes_trigger=256;max_write_buffer_number=16;compression_per_level=kNoCompression:kNoCompression:kNoCompression:kZlibCompression:kZlibCompression:kZlibCompression;bottommost_compression=kZlibCompression;compression_opts=-14:1:0;block_based_table_factory={cache_index_and_filter_blocks=1;filter_policy=bloomfilter:10:false;whole_key_filtering=1};level_compaction_dynamic_level_bytes=true;optimize_filters_for_hits=true;compaction_style=kCompactionStyleLevel;compaction_pri=kByCompensatedSize
+#rocksdb_override_cf_options=system={memtable=skip_list:16}
+#rocksdb_max_background_flushes=1
+#rocksdb_max_background_compactions=1
+#rocksdb_perf_context_level=4
+#rocksdb_lock_wait_timeout=20
+
+
+default_authentication_plugin=mysql_native_password
+
+# print extra info that helps diagnosing&fixing issues.
+print_extra_info_verbosity=4
+log_error_verbosity=3
+disconnect_on_net_write_timeout = true
+################################################### Group Replication related settings ##############################
+ddc_mode=1
+slow_logging_start_point=2
+
+#group_replication_group_name="place_holder_mgr_group_name" # "uuid"
+#group_replication_start_on_boot=off # set this to on at the end of a db instance installation.
+#group_replication_local_address= "place_holder_mgr_local_address" # "s1:33061" used for group replication communication, not for db clients.
+#group_replication_group_seeds= "place_holder_mgr_seeds" # "s1:33061,s2:33061,s3:33061" # only use 1st node(the bootstrapping node) as seed, can't use joining node as seed.
+#group_replication_bootstrap_group=off # always off in option file. set it on  when the bootstrapping instance is running, to ensure that only one member actually bootstraps the group.
+#group_replication_enforce_update_everywhere_checks =false
+#group_replication_consistency =BEFORE_ON_PRIMARY_FAILOVER # DML returns ER_GR_HOLD_WAIT_TIMEOUT error if trx held more than wait_timeout.
+#group_replication_clone_threshold=10000000
+#group_replication_recovery_retry_count = place_holder_mgr_recovery_retry_count
+#group_replication_recovery_reconnect_interval = 2
+#group_replication_member_expel_timeout =0 # 0 + 5 secs for a node failure to be suspected
+#group_replication_transaction_size_limit =1GB
+#group_replication_compression_threshold =8MB
+#group_replication_communication_max_message_size=32MB
+#group_replication_ip_whitelist= "place_holder_mgr_whitelist" # "s1,s2,s3"
+#group_replication_member_weight = place_holder_mgr_member_weight # the chance to be elected as master.
+#group_replication_unreachable_majority_timeout = 3
+#group_replication_autorejoin_tries = 100
+#group_replication_exit_state_action = ABORT_SERVER
+#group_replication_single_primary_mode=ON
+#group_replication_recovery_compression_algorithms=zstd,zlib
+#group_replication_recovery_zstd_compression_level=11
+
+#clone_enable_compression=true
+#clone_buffer_size=128MB
+##clone_max_data_bandwidth=
+##clone_max_network_bandwidth
+#clone_max_concurrency=32
+
+disabled_storage_engines="MyISAM,BLACKHOLE,FEDERATED,ARCHIVE,MEMORY"
+default-table-encryption =off # either off or on is OK, but all nodes must have same value
+plugin_load_add='group_replication.so;mysql_clone.so'
+
+# this will be turned off by GR automatically when this instance becomes master in a GR cluster.
+# it helps to avoid split brain if the node drops out of a GR cluster.
+#super_read_only=OFF
