@@ -20,7 +20,6 @@ ls |while read f ; do chmod 0755 $f ; done
 #copy stuff to binary
 cd $srcroot/dba_tools
 cp libjemalloc.so.3.6.0 $1/.run_so
-#cp libev.so.4.0.0  libjemalloc.so.3.6.0  libz.so.1.2.8  $1/share_lib
 cp libjemalloc.so.3.6.0  $1/share_lib
 
 # these files must also exist in dba_tools/ dir

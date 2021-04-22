@@ -30,28 +30,28 @@ All dynamic shared objects (*.so files) that programs in Kunlun-storage/bin depe
 DO NOT copy everything in deps into lib at once, otherwise your linux OS or any software may not be able to work because of library version mismatches!
 
 ##Instance Installation
-Use the ./install/install-mysql.py script to install an MGR node. To do so, one first needs to prepare an MGR cluster configuration file using the template in install/mgr_config.json. In this doc below the config file will be called 'my-shards.json'.
+Use the ./dba_tools/install-mysql.py script to install an MGR node. To do so, one first needs to prepare an MGR cluster configuration file using the template in dba_tools/mgr_config.json. In this doc below the config file will be called 'my-shards.json'.
 
 One should set the 'mgr_config' argument to the path of the MGR cluster configuration file.
 
 One should set the 'target_node_index' argument of install-mysql.py to specify the target db instance to install. 'target_node_index' is the target db instance's array index in the 'nodes' array of my-shards.json. Note that one should always install the group replication primary node before installing any of its replicas, and make sure the primary node specified in config file is really currently the primary node of the MGR shard.
 
-Then in Kunlun-storage/install directory, do below:
+Then in Kunlun-storage/dba_tools directory, do below:
 `python install-mysql.py mgr_config=./my-shards.json target_node_index=0`
 There are other optional parameters to install-mysql.py, but they are not used for now or can be generated automatically except the 'dbcfg' argument, as detailed below.
 
-To startup mysql server, use the script 'startmysql.sh' Kunlun-storage/install: ./startmysql.sh 3306
-There are several other useful scripts in Kunlun-storage/install, use 'imysql.sh port' to connect to a db instance created by install-mysql.py; Use 'monitormysql.sh port' to see current QPS and other performance counters; Use 'stopmysql.sh port' to stop a mysqld server process.
+To startup mysql server, use the script 'startmysql.sh' Kunlun-storage/dba_tools: ./startmysql.sh 3306
+There are several other useful scripts in Kunlun-storage/dba_tools, use 'imysql.sh port' to connect to a db instance created by install-mysql.py; Use 'monitormysql.sh port' to see current QPS and other performance counters; Use 'stopmysql.sh port' to stop a mysqld server process.
 
 ### Alternative db instance config templates
 
-There are multiple db instance config template files in ./install directory. Among them, ./install/template.cnf is the default if 'dbcfg' argument isn't specified in install-mysql.py execution, and should always be used for Kunlun-storage db instances. Settings in ./install/template.cnf are premium for best performance, suitable for high performance mysql servers.
+There are multiple db instance config template files in ./dba_tools directory. Among them, ./dba_tools/template.cnf is the default if 'dbcfg' argument isn't specified in install-mysql.py execution, and should always be used for Kunlun-storage db instances. Settings in ./dba_tools/template.cnf are premium for best performance, suitable for high performance mysql servers.
 
-For the rest template files, the ./install/mysql-template.cnf is suitable for original mysql-8.0.x (x >=18) instances, and ./install/percona-template.cnf is suitable for original percona-mysql-8.0.18-9. Both of them originated from ./install/template.cnf, with unsupported arguments commented out and all other settings are the same as ./install/template.cnf.
+For the rest template files, the ./dba_tools/mysql-template.cnf is suitable for original mysql-8.0.x (x >=18) instances, and ./dba_tools/percona-template.cnf is suitable for original percona-mysql-8.0.18-9. Both of them originated from ./dba_tools/template.cnf, with unsupported arguments commented out and all other settings are the same as ./dba_tools/template.cnf.
 
-And ./install/template-small.cnf is suitable for Kunlun-storage db instances with trivial resource consumption, e.g. I use it for Kunlun DDC cluster installation testing. One could use another template file as necessary for other purposes.
+And ./dba_tools/template-small.cnf is suitable for Kunlun-storage db instances with trivial resource consumption, e.g. I use it for Kunlun DDC cluster installation testing. One could use another template file as necessary for other purposes.
 
-If one needs other config templates than ./install/template.cnf, specifiy the 'dbcfg' argument. For example when you have an binary installation of original mysql-8.0.x or a percona-mysql-8.0.x-y, you can copy the Kunlun-storage/install directory into that installation's root directory, in order to make use of the installation scripts and config templates. And you can create another template file and use it to create db instances as below example.
+If one needs other config templates than ./dba_tools/template.cnf, specifiy the 'dbcfg' argument. For example when you have an binary installation of original mysql-8.0.x or a percona-mysql-8.0.x-y, you can copy the Kunlun-storage/dba_tools directory into that installation's root directory, in order to make use of the installation scripts and config templates. And you can create another template file and use it to create db instances as below example.
 
 e.g. `python install-mysql.py mgr_config=./mgr_config0.json target_node_index=0 dbcfg=./mysql-template-small.cnf`
 
@@ -80,6 +80,6 @@ e.g. `python install-mysql.py mgr_config=./mgr_config0.json target_node_index=0 
 
 ## CMake configuration
 
-This binary is build using below cmake configuration. Note that WITH_JEMALLOC is 0 because there would be error during cmake generation or build phase if it's 1 on some Linux distributions. But a prebuilt jemalloc shared object library file is used when starting up mysqld, see install/bootmysql.sh for details. Setting WITH_LTO = 1 could produce a little bit of performance gains but it only works for a narrow range of gcc versions.
+This binary is build using below cmake configuration. Note that WITH_JEMALLOC is 0 because there would be error during cmake generation or build phase if it's 1 on some Linux distributions. But a prebuilt jemalloc shared object library file is used when starting up mysqld, see dba_tools/bootmysql.sh for details. Setting WITH_LTO = 1 could produce a little bit of performance gains but it only works for a narrow range of gcc versions.
  
 cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/home/abc/mysql_installs/kunlun-storage-bin-rel -DWITH_SSL=system -DWITH_BOOST=/home/abc/Downloads/boost_1_70_0 -DWITH_KEYRING_VAULT=0 -DWITH_ZLIB=bundled -DWITH_TOKUDB=NO -DWITH_EDITLINE=bundled -DWITH_LTO=0  -DWITH_ROUTER=0 -DWITH_FEDERATED_STORAGE_ENGINE=1 -DWITH_ARCHIVE_STORAGE_ENGINE=1 -DWITH_NGRAM_PARSER=1 -DWITHOUT_ROCKSDB=1 -DWITH_ZSTD=bundled -DWITH_LZ4=bundled -DWITH_PROTOBUF=bundled -DWITH_LIBEVENT=bundled -DWITH_JEMALLOC=0

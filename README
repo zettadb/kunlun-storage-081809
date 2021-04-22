@@ -6,7 +6,7 @@ To achieve all above, we modified percona-mysql extensively --- including innodb
 
 We also maintain an enterprise edition of Kunlun distributed DBMS, which contains exclusively all performance enhancements in kunlun-storage and kunlun computing node software. Kunlun enterprise edition has identical functionality as this open source version. And they share the same data file format, WAL(redo) log file format, binlog events format, general log format, slow query log format, mysqld log format, and config file content. They also share the same metadata table format in both kunlun-storage and kunlun computing node. Consequently, the data directory of kunlun open source edition and kunlun enterprise edition can be used interchangably.
 
-To install Kunlun-storage database instances, see INSTALL.Kunlun for instructions.
+To install Kunlun-storage database instances, see INSTALL.kunlun.md for instructions.
 
 
 Percona Server 8.0
