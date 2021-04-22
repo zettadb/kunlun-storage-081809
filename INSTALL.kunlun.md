@@ -1,14 +1,33 @@
 #Welcome to Kunlun-storage database instance installation guide!
 
 ##Intro
-Kunlun-storage originated from percona-mysql-8.0.18-9, and it contains fixes to all known XA bugs in mysql-8.0.18-9. Without such fixes, Kunlun DDC will not be crash safe and may lose committed transactions or harmed by other serious data consistency errors, in the event of various hardware/software/network failures.
 
-Kunlun-storage also contains features required by the computing node program of Kunlun distributed DBMS, and thus Kunlun Distributed Database Cluster(DDC) requires the use of Kunlun-storage as meta data cluster and storage shards.
+Kunlun-storage originated from percona-mysql-8.0.18-9, and it contains fixes to all known XA bugs in mysql-8.0.18-9. Without such fixes, Kunlun DDC will not be crash safe and may lose committed transactions or be harmed by other serious data consistency errors, in the event of various hardware/software/network failures.
+
+Kunlun-storage also contains features required by the computing node program of Kunlun distributed DBMS, and thus Kunlun Distributed Database Cluster(DDC) requires the use of Kunlun-storage as meta data cluster and storage shards. Finally, we enhanced performance of XA transaction processing, and part of such enhancements are also in this open source edition.
+
+To achieve all above, we modified percona-mysql extensively --- including innodb, binlog recovery, binlog format, etc. Consequently, kunlun-storage's innodb data file format and some binlog events format are different from community MySQL-8.0.x or percona-server-8.0.x, the data directory of kunlun-storage can not be used by community MySQL-8.0.x or percona-server-8.0.x, and vice versa. But percona xtrabackup can correctly backup a kunlun-storage data directory and restore it.
+
+We also maintain an enterprise edition of Kunlun distributed DBMS, which contains exclusively all performance enhancements in kunlun-storage and kunlun computing node software. Kunlun enterprise edition has identical functionality as this open source version. And they share the same data file format, WAL(redo) log file format, binlog events format, general log format, slow query log format, mysqld log format, and config file content. They also share the same metadata table format in both kunlun-storage and kunlun computing node. Consequently, the data directory of kunlun open source edition and kunlun enterprise edition can be used interchangably.
+
+##Build from source
+The same as community mysql or percona-server --- use cmake to configure it then do something like 'make install -j8'.
+
+A typical cmake configuration we often use is as below. Note that we do use jemalloc, a shared object of prebuilt jemalloc is provided and is installed to each kunlun-storage db instance.
+
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=<installation directory> -DWITH_SSL=system -DWITH_BOOST=<boost source root directory> -DWITH_KEYRING_VAULT=0 -DWITH_ZLIB=bundled -DWITH_TOKUDB=NO -DWITH_EDITLINE=bundled -DWITH_LTO=0  -DWITH_ROUTER=0 -DWITH_FEDERATED_STORAGE_ENGINE=1 -DWITH_ARCHIVE_STORAGE_ENGINE=1 -DWITH_NGRAM_PARSER=1 -DWITHOUT_ROCKSDB=1 -DWITH_ZSTD=bundled -DWITH_LZ4=bundled -DWITH_PROTOBUF=bundled -DWITH_LIBEVENT=bundled -DWITH_JEMALLOC=0
+
+After 'make install' completed, in root source directory do 'bash post-install <installation directory>'
 
 ##Library dependencies
+
+If you are using a kunlun-storage program built from source on the same Linux distribution and version as where it's being used, simply skip this step because there is no dependency issues.
+
 Add Kunlun-storage/lib into LD_LIBRARY_PATH.
 
 All dynamic shared objects (*.so files) that programs in Kunlun-storage/bin depend on, are provided in Kunlun-storage/lib/deps directory. Try startup mysqld (e.g. mysqld --version) and see if your local Linux distro needs any of the *.so files. If so, copy needed ones into Kunlun-storage/lib.
+
+DO NOT copy everything in deps into lib at once, otherwise your linux OS or any software may not be able to work because of library version mismatches!
 
 ##Instance Installation
 Use the ./install/install-mysql.py script to install an MGR node. To do so, one first needs to prepare an MGR cluster configuration file using the template in install/mgr_config.json. In this doc below the config file will be called 'my-shards.json'.
