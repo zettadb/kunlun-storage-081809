@@ -37,17 +37,3 @@ else
 	./bootmysql.sh $base_dir ${etcfile} ${mysqluser}
 fi
 
-
-#startfail=1
-#for i in `seq 0 180`
-#do
-#   ./jmysql.sh $port "start group_replication; select now();select version();"
-#   if $? == 0 ;then
-#   		startfail=0
-#        break
-#   fi
-#   sleep 1
-#done
-##
-#exit $startfail
-##

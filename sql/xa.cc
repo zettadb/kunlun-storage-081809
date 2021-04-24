@@ -1779,53 +1779,15 @@ std::string &XID_STATE::to_string(std::string &str) const
   @param [in] buf serialized xid string
   @retval true on format error; false on success.
 */
-bool deserialize_xid(const char *buf, long &fmt, long &gln, long &bln,
+bool deserialize_xid(const char *buf, long &/*fmt*/, long &gln, long &bln,
                      char *dat)
 {
-  if (ddc_mode) {
-    size_t bufl = strlen(buf);
-    if (bufl < 3 || buf[0] != '\'' || buf[bufl - 1] != '\'')
-      return true;
-    memcpy(dat, buf + 1, bufl - 2);
-    gln = bufl - 2;
-    bln = 0;
-    return false;
-  }
-
-  if (!(buf[0] == 'X' && buf[1] == '\''))
+  size_t bufl = strlen(buf);
+  if (bufl < 3 || buf[0] != '\'' || buf[bufl - 1] != '\'')
     return true;
-
-  int i= 2, start, j= 0;
-
-  for (start= i; buf[i] && buf[i] != '\''; i+= 2, j++)
-  {
-    dat[j]= buf[i] - (isdigit(buf[i]) ? '0' : 'a' - 10);
-    dat[j] <<= 4;
-    dat[j] |= (buf[i + 1] - (isdigit(buf[i + 1]) ? '0' : 'a' - 10));
-  }
-
-  gln= (i - start) / 2;
-
-  if (!buf[i])
-    return true;
-  i++;
-  if (!(buf[i] == ',' && buf[i + 1] == 'X' && buf[i + 2]== '\''))
-    return true;
-  i+=3;
-
-  for (start= i; buf[i] && buf[i] != '\''; i+= 2, j++)
-  {
-    dat[j]= buf[i] - (isdigit(buf[i]) ? '0' : 'a' - 10);
-    dat[j] <<= 4;
-    dat[j] |= (buf[i + 1] - (isdigit(buf[i + 1]) ? '0' : 'a' - 10));
-  }
-
-  bln= i - 4 - gln;
-
-  if (buf[i + 1] != ',' || !buf[i + 2])
-    return true;
-  i+= 2;
-  sscanf(buf + i, "%lu", &fmt);
+  memcpy(dat, buf + 1, bufl - 2);
+  gln = bufl - 2;
+  bln = 0;
   return false;
 }
 
