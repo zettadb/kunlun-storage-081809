@@ -7,7 +7,7 @@ fi
 
 port=$1
 
-base_dir=`pwd | awk -F"/dba_toos$" '{print $1}'`
+base_dir=`pwd | awk -F"/dba_tools$" '{print $1}'`
 etcfile=${base_dir}/etc/my_${port}.cnf
 
 if [ ! -f  $etcfile ];then
