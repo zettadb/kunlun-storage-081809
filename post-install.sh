@@ -5,7 +5,7 @@ then
 fi
 
 #copy doc
-cp INSTALL.Kunlun $1
+cp INSTALL.kunlun.md $1
 
 srcroot=`pwd`
 

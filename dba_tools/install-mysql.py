@@ -238,7 +238,7 @@ if __name__ == "__main__":
             config_template_file = "./template.cnf"
         if not os.path.exists(config_template_file):
             raise ValueError("DB config template file {} doesn't exist!".format(config_template_file))
-        install_path = os.getcwd()[:-8]
+        install_path = os.getcwd()[:-9]
         print "Installing mysql instance, please wait..."
         MysqlConfig(config_template_file, install_path, server_id, cluster_id, shard_id, mgr_config_path, target_node_index)
     except KeyError, e:
