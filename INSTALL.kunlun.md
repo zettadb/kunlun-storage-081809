@@ -11,6 +11,7 @@ To achieve all above, we modified percona-mysql extensively --- including innodb
 We also maintain an enterprise edition of Kunlun distributed DBMS, which contains exclusively all performance enhancements in kunlun-storage and kunlun computing node software. Kunlun enterprise edition has identical functionality as this open source version. And they share the same data file format, WAL(redo) log file format, binlog events format, general log format, slow query log format, mysqld log format, and config file content. They also share the same metadata table format in both kunlun-storage and kunlun computing node. Consequently, the data directory of kunlun open source edition and kunlun enterprise edition can be used interchangably.
 
 ##Build from source
+
 The same as community mysql or percona-server --- use cmake to configure it then do something like 'make install -j8'.
 
 A typical cmake configuration we often use is as below. Note that we do use jemalloc, a shared object of prebuilt jemalloc is provided and is installed to each kunlun-storage db instance.
@@ -29,7 +30,8 @@ All dynamic shared objects (*.so files) that programs in Kunlun-storage/bin depe
 
 DO NOT copy everything in deps into lib at once, otherwise your linux OS or any software may not be able to work because of library version mismatches!
 
-##Instance Installation
+## Database Instance Installation
+
 Use the ./dba_tools/install-mysql.py script to install an MGR node. To do so, one first needs to prepare an MGR cluster configuration file using the template in dba_tools/mgr_config.json. In this doc below the config file will be called 'my-shards.json'.
 
 One should set the 'mgr_config' argument to the path of the MGR cluster configuration file.
