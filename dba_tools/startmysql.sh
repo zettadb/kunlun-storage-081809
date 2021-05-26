@@ -8,10 +8,19 @@ fi
 port=$1
 
 base_dir=`pwd | awk -F"/dba_tools$" '{print $1}'`
-etcfile=${base_dir}/etc/my_${port}.cnf
 
-if [ ! -f  $etcfile ];then
-	echo "have not find etc file:$etcfile,can't not start\n"
+conf_list_file=${base_dir}/etc/instances_list.txt
+if [ ! -f  $conf_list_file ];then
+	echo "have not found instances list file:$conf_list_file, can not start\n"
+	exit -1
+fi
+
+etcfile=`grep "$port==>" $conf_list_file | head -1 | sed "s/^$port==>//g"` 
+if test "$etcfile" = ""; then
+	echo "have not found instance with port:$port, can not start\n"
+	exit -1
+elif test ! -f $etcfile; then
+	echo "have not found config file:$etcfile, can not start\n"
 	exit -1
 fi
 
@@ -29,6 +38,7 @@ if [ $pid"e" != "e" ];then
 	echo "mysqld is running,can't start"
 	exit -1
 fi
+
 
 
 if [ $shelluser != $mysqluser ];then

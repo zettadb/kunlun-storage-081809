@@ -1,6 +1,7 @@
 #!/bin/python
 
 import os
+import os.path
 import sys
 import re
 import time
@@ -147,17 +148,13 @@ class MysqlConfig:
         config_template = open(config_template_file, 'r').read()
         conf = param_replace(config_template, replace_items)
 
-        etc_path = install_path + "/etc"
-        if not os.path.exists(etc_path):
-            os.mkdir(etc_path)
-        cnf_file_path = etc_path+"/my_"+ str(server_port) +".cnf"
+        subprocess.call(["chown", user+":users", log_path, "-R"])
+        subprocess.call(["chown", user+":users", data_path, "-R"])
+
+        cnf_file_path = data_path+"/my_"+ str(server_port) +".cnf"
         cnf_file = open(cnf_file_path, 'w')
         cnf_file.write(conf)
         cnf_file.close()
-
-        subprocess.call(["chown", user+":users", etc_path, "-R"])
-        subprocess.call(["chown", user+":users", log_path, "-R"])
-        subprocess.call(["chown", user+":users", data_path, "-R"])
         
         if is_master:
             start_mgr_sql = 'SET GLOBAL group_replication_bootstrap_group=ON; START GROUP_REPLICATION; SET GLOBAL group_replication_bootstrap_group=OFF; '
@@ -206,7 +203,13 @@ class MysqlConfig:
 #        uuid_str, errmsg = popen_ret.communicate()
 #        uuid_str = uuid_str[:-1] # chop off the trailing \n
 #        subprocess.call(shlex.split("sed -e 's/place_holder_mgr_group_name/" + uuid_str + "/' -i " + cnf_file_path))
-        
+        # append the new instance's port to datadir mapping into instance_list.txt
+        etc_path = install_path + "/etc"
+        if not os.path.exists(etc_path):
+        	os.mkdir(etc_path)
+		subprocess.call(["chown", user+":users", etc_path, "-R"])
+        conf_list_file = etc_path+"/instances_list.txt"
+        os.system("echo \"" + str(server_port) + "==>" + cnf_file_path + "\" >> " + conf_list_file)
 
 def print_usage():
     print 'Usage: install-mysql.py mgr_config=/path/of/mgr/config/file target_node_index=idx [dbcfg=/db/config/template/path/template.cnf] [cluster_id=ID] [shard_id=N] [server_id=N]'
@@ -238,7 +241,7 @@ if __name__ == "__main__":
             config_template_file = "./template.cnf"
         if not os.path.exists(config_template_file):
             raise ValueError("DB config template file {} doesn't exist!".format(config_template_file))
-        install_path = os.getcwd()[:-9]
+        install_path = os.path.dirname(os.getcwd())
         print "Installing mysql instance, please wait..."
         MysqlConfig(config_template_file, install_path, server_id, cluster_id, shard_id, mgr_config_path, target_node_index)
     except KeyError, e:
