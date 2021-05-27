@@ -48,6 +48,7 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index):
     server_data_prefix = ''
     server_log_prefix = ''
     db_inst_user = ''
+    log_arch = ''
 
     for val in jscfg['nodes']:
         if val['is_primary'] == True and idx == nodeidx:
@@ -70,6 +71,8 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index):
             server_data_prefix = val['data_dir_path']
             server_log_prefix = val['log_dir_path']
             db_inst_user = val['user']
+            if val.has_key('innodb_log_dir_path'):
+                log_arch = val['innodb_log_dir_path']
 
         idx = idx + 1
 
@@ -95,7 +98,8 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index):
     log_bin_arg = log_path + "/dblogs/bin"
 
 	# seperate binlog/relaylogs from innodb redo logs, store them in two dirs so possibly two disks to do parallel IO.
-    log_arch = data_path + "/dblogs/arch"
+    if log_arch == '':
+        log_arch = data_path + "/dblogs/arch"
 
     replace_items["place_holder_ip"] = local_ip
     replace_items["place_holder_mgr_recovery_retry_count"] = str(mgr_num_nodes*100)
@@ -180,21 +184,22 @@ class MysqlConfig:
         # the python mysql client lib cuts long sql text to multiple sections, so do 'set sql_log_bin=0; ' at beginning of each query.
         init_sql = "set sql_log_bin=0; create user clustmgr identified by 'clustmgr_pwd'; grant  Select,Insert,Update,Delete,GROUP_REPLICATION_ADMIN,SYSTEM_VARIABLES_ADMIN on *.* to clustmgr@'%';flush privileges;" \
                 + "set sql_log_bin=0; create user repl identified by 'repl_pwd'; grant replication slave,replication client, BACKUP_ADMIN, CLONE_ADMIN on *.* to 'repl'@'%' ; flush privileges;" \
-                + "set sql_log_bin=0; create user agent@localhost identified by 'agent_pwd'; grant all on *.* to 'agent'@'localhost' with grant option;flush privileges;"
+                + "set sql_log_bin=0; create user agent@localhost identified by 'agent_pwd'; grant all on *.* to 'agent'@'localhost' with grant option;flush privileges;select version();"
         init_sql2 = "set sql_log_bin=0; create user pgx identified by 'pgx_pwd' ; grant Select,Insert,Update,Delete,Create,Drop,Process,References,Index,Alter,SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES,Execute,CREATE VIEW,SHOW VIEW,CREATE ROUTINE,ALTER ROUTINE,Event,Trigger,REPLICATION CLIENT,REPLICATION SLAVE,reload,GROUP_REPLICATION_ADMIN,SYSTEM_VARIABLES_ADMIN on *.* to  'pgx'@'%'; flush privileges;" \
                 + "set sql_log_bin=0;delete from mysql.db where Db='test\_%' and Host='%' ;delete from mysql.db where Db='test' and Host='%';flush privileges;"  \
                 + '''CHANGE MASTER TO MASTER_USER='repl', MASTER_PASSWORD='repl_pwd' FOR CHANNEL 'group_replication_recovery';'''   \
-                + start_mgr_sql + '''select now();select version();'''
-        sys_cmd = " ".join([install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-p'+"'"+root_init_password+"'", '-e', '"' + change_pwd_sql + init_sql + '"'])
+                + start_mgr_sql
+        sys_cmd = " ".join([install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-p'+"'"+root_init_password+"'", '-e', '"' + change_pwd_sql + init_sql + '"', '; exit 0'])
 
         add_proc_cmd = " ".join([install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-proot <' , install_path+'/dba_tools/seq_reserve_vals.sql' ])
-
+	initcmd2 = " ".join([install_path + "/bin/mysql", "--connect-expired-password", '-S' + data_path + '/prod/mysql.sock', '-uroot -proot', '-e', '"' + init_sql2 + '"\n'])
         for idx in xrange(30):
-            os.system(sys_cmd)
-            os.system(" ".join([install_path + "/bin/mysql", "--connect-expired-password", '-S' + data_path + '/prod/mysql.sock', '-uroot -proot', '-e', '"' + init_sql2 + '"\n']))
-            os.system(add_proc_cmd)
-            print "Waiting for mysqld to startup: " + str(idx*5)
+            result = subprocess.check_output(sys_cmd, shell = True, stderr=subprocess.STDOUT)
+            if result.find('version') >= 0:
+                break
             os.system('sleep 5\n')
+        os.system(initcmd2)
+        os.system(add_proc_cmd)
 
         os.system("sed -e 's/#super_read_only=OFF/super_read_only=ON/' -i " + cnf_file_path)
 #        uuid_cmd_str = install_path + "/bin/mysql  --silent --skip-column-names --connect-expired-password -S" + data_path + '/prod/mysql.sock -uroot -proot -e "set @uuid_str=uuid(); set global group_replication_group_name=@uuid_str; ' + start_mgr_sql+ ' select @uuid_str;"\n'

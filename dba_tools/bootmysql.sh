@@ -36,5 +36,5 @@ if [ ! -e ${runso_dir}/${libjemalloc} ] ; then
 fi
 
 export LD_PRELOAD="${runso_dir}/${libjemalloc}"
-cd ${base_dir}; nohup ./bin/mysqld_safe --defaults-file=${etcfile} --user=${mysqluser} >>${log_dir}/nohup.out &
+cd ${base_dir}; ./bin/mysqld_safe --defaults-file=${etcfile} --user=${mysqluser} </dev/null >>${log_dir}/nohup.out 2>&1 &
 

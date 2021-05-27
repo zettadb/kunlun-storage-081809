@@ -6,7 +6,7 @@ if [ $# -ne 1 ];then
 fi
 
 port=$1
-base_dir=`pwd | awk -F"/dba_tools$" '{print $1}'`
+base_dir=`dirname "$PWD"`
 
 conf_list_file=${base_dir}/etc/instances_list.txt
 if [ ! -f  $conf_list_file ];then
