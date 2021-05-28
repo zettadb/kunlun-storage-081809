@@ -12,7 +12,9 @@ import socket
 import subprocess
 import json
 import shlex
-
+import pwd
+import grp
+from distutils.util import strtobool
 
 def param_replace(string, rep_dict):
     pattern = re.compile("|".join([re.escape(k) for k in rep_dict.keys()]), re.M)
@@ -131,13 +133,13 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index):
     os.makedirs(log_bin_arg)
     os.makedirs(log_arch)
     jsconf.close()
-    return is_master_node, server_port, data_path, log_path, log_dir, db_inst_user
+    return is_master_node, server_port, data_path, log_path, log_arch, log_dir, db_inst_user
 
 
 
 class MysqlConfig:
 
-    def __init__(self, config_template_file, install_path,  server_id, cluster_id, shard_id, mgr_config_path, target_node_index):
+    def __init__(self, config_template_file, install_path,  server_id, cluster_id, shard_id, mgr_config_path, target_node_index, usemgr):
 
 
         replace_items = {
@@ -148,23 +150,27 @@ class MysqlConfig:
                 "place_holder_cluster_id": str(cluster_id),
                 }
 
-        is_master, server_port, data_path, log_path, log_dir, user = make_mgr_args(mgr_config_path, replace_items, target_node_index)
+        is_master, server_port, data_path, log_path, log_arch, log_dir, user = make_mgr_args(mgr_config_path, replace_items, target_node_index)
         config_template = open(config_template_file, 'r').read()
         conf = param_replace(config_template, replace_items)
+        group = grp.getgrgid(pwd.getpwnam(user).pw_gid).gr_name
 
-        subprocess.call(["chown", user+":users", log_path, "-R"])
-        subprocess.call(["chown", user+":users", data_path, "-R"])
+        subprocess.call(["chown", "-R", user+":"+group, log_path])
+        subprocess.call(["chown", "-R", user+":"+group, log_arch])
+        subprocess.call(["chown", "-R", user+":"+group, data_path])
 
         cnf_file_path = data_path+"/my_"+ str(server_port) +".cnf"
         cnf_file = open(cnf_file_path, 'w')
         cnf_file.write(conf)
         cnf_file.close()
         
-        if is_master:
-            start_mgr_sql = 'SET GLOBAL group_replication_bootstrap_group=ON; START GROUP_REPLICATION; SET GLOBAL group_replication_bootstrap_group=OFF; '
-            #select group_replication_set_as_primary(@@server_uuid);  this can't be done now, it requires a quorum.
-        else:
-            start_mgr_sql = 'START GROUP_REPLICATION;'
+        start_mgr_sql = ''
+        if usemgr:
+            if is_master:
+                start_mgr_sql = 'SET GLOBAL group_replication_bootstrap_group=ON; START GROUP_REPLICATION; SET GLOBAL group_replication_bootstrap_group=OFF; '
+                #select group_replication_set_as_primary(@@server_uuid);  this can't be done now, it requires a quorum.
+            else:
+                start_mgr_sql = 'START GROUP_REPLICATION;'
 
         cmdstr = " ".join(["su", user, "-c",  "\""+install_path+"/bin/mysqld", "--defaults-file="+cnf_file_path, "--user="+user, "--initialize \""]) #, stdout=install_inf)
         os.system(cmdstr)
@@ -200,8 +206,8 @@ class MysqlConfig:
             os.system('sleep 5\n')
         os.system(initcmd2)
         os.system(add_proc_cmd)
-
-        os.system("sed -e 's/#super_read_only=OFF/super_read_only=ON/' -i " + cnf_file_path)
+        if usemgr:
+            os.system("sed -e 's/#super_read_only=OFF/super_read_only=ON/' -i " + cnf_file_path)
 #        uuid_cmd_str = install_path + "/bin/mysql  --silent --skip-column-names --connect-expired-password -S" + data_path + '/prod/mysql.sock -uroot -proot -e "set @uuid_str=uuid(); set global group_replication_group_name=@uuid_str; ' + start_mgr_sql+ ' select @uuid_str;"\n'
 #        uuid_cmd=shlex.split(uuid_cmd_str)
 #        popen_ret = subprocess.Popen(uuid_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=install_path)
@@ -212,7 +218,7 @@ class MysqlConfig:
         etc_path = install_path + "/etc"
         if not os.path.exists(etc_path):
         	os.mkdir(etc_path)
-		subprocess.call(["chown", user+":users", etc_path, "-R"])
+		subprocess.call(["chown", "-R", user+":"+group, etc_path])
         conf_list_file = etc_path+"/instances_list.txt"
         os.system("echo \"" + str(server_port) + "==>" + cnf_file_path + "\" >> " + conf_list_file)
 
@@ -248,7 +254,10 @@ if __name__ == "__main__":
             raise ValueError("DB config template file {} doesn't exist!".format(config_template_file))
         install_path = os.path.dirname(os.getcwd())
         print "Installing mysql instance, please wait..."
-        MysqlConfig(config_template_file, install_path, server_id, cluster_id, shard_id, mgr_config_path, target_node_index)
+        # undocument option, used for internal testing.
+        usemgr=args.get('usemgr', 'True')
+        usemgr=strtobool(usemgr)
+        MysqlConfig(config_template_file, install_path, server_id, cluster_id, shard_id, mgr_config_path, target_node_index, usemgr)
     except KeyError, e:
         print_usage()
         print e
