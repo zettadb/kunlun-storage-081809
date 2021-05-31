@@ -204,8 +204,9 @@ class MysqlConfig:
             if result.find('version') >= 0:
                 break
             os.system('sleep 5\n')
+        if not usemgr or is_master:
+            os.system(add_proc_cmd)
         os.system(initcmd2)
-        os.system(add_proc_cmd)
         if usemgr:
             os.system("sed -e 's/#super_read_only=OFF/super_read_only=ON/' -i " + cnf_file_path)
 #        uuid_cmd_str = install_path + "/bin/mysql  --silent --skip-column-names --connect-expired-password -S" + data_path + '/prod/mysql.sock -uroot -proot -e "set @uuid_str=uuid(); set global group_replication_group_name=@uuid_str; ' + start_mgr_sql+ ' select @uuid_str;"\n'
