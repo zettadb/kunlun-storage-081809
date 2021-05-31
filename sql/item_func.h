@@ -1801,6 +1801,8 @@ class Item_func_shift : public Item_func_bit {
  public:
   Item_func_shift(const POS &pos, Item *a, Item *b)
       : Item_func_bit(pos, a, b) {}
+  bool check_partition_func_processor(uchar *) override { return false; }
+  bool check_function_as_value_generator(uchar *) override { return false; }
 };
 
 class Item_func_shift_left final : public Item_func_shift {

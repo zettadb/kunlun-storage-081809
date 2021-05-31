@@ -691,7 +691,7 @@ bool File_query_log::write_general(ulonglong event_utime,
       goto err;
     if (my_b_write(&log_file, pointer_cast<const uchar*>(extra_info), extra_len))
       goto err;
-  
+
     if (my_b_write(&log_file, pointer_cast<const uchar *>("\n"), 1) ||
         flush_io_cache(&log_file))
       goto err;
@@ -1064,12 +1064,12 @@ bool Log_to_csv_event_handler::log_general(
   if (print_extra_info)
   {
     num_written=
-      snprintf(extra_info,extra_info_len, "%*s:%u|sock_fd: %d|glob:%u,comp:%u",
+      snprintf(extra_info, extra_info_len, "%*s:%u|sock_fd: %d|glob:%u,comp:%u",
                (secctx ? (int)secctx->host_or_ip().length : 0),
                (secctx ? secctx->host_or_ip().str : NULL),
                thd->peer_port, sock_fd,
-               thd->variables.global_conn_id,
-               thd->variables.comp_node_id);
+			   thd->variables.global_conn_id,
+			   thd->variables.comp_node_id);
     if (num_written >= extra_info_len)
       num_written= extra_info_len-1;
   }
@@ -1080,8 +1080,7 @@ bool Log_to_csv_event_handler::log_general(
   */
   if (table->field[GLT_FIELD_ARGUMENT]->store(sql_text, sql_text_len,
                                               client_cs) < 0 ||
-      (num_written > 0 &&
-	   table->field[GLT_FIELD_EXTRA]->store(extra_info,
+      (num_written > 0 && table->field[GLT_FIELD_EXTRA]->store(extra_info,
                                            num_written, client_cs) < 0))
     goto err;
 
