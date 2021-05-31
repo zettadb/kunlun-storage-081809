@@ -1,6 +1,7 @@
 #!/bin/python
 
 import os
+import os.path
 import sys
 import re
 import time
@@ -11,7 +12,9 @@ import socket
 import subprocess
 import json
 import shlex
-
+import pwd
+import grp
+from distutils.util import strtobool
 
 def param_replace(string, rep_dict):
     pattern = re.compile("|".join([re.escape(k) for k in rep_dict.keys()]), re.M)
@@ -47,6 +50,7 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index):
     server_data_prefix = ''
     server_log_prefix = ''
     db_inst_user = ''
+    log_arch = ''
 
     for val in jscfg['nodes']:
         if val['is_primary'] == True and idx == nodeidx:
@@ -69,6 +73,8 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index):
             server_data_prefix = val['data_dir_path']
             server_log_prefix = val['log_dir_path']
             db_inst_user = val['user']
+            if val.has_key('innodb_log_dir_path'):
+                log_arch = val['innodb_log_dir_path']
 
         idx = idx + 1
 
@@ -94,7 +100,8 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index):
     log_bin_arg = log_path + "/dblogs/bin"
 
 	# seperate binlog/relaylogs from innodb redo logs, store them in two dirs so possibly two disks to do parallel IO.
-    log_arch = data_path + "/dblogs/arch"
+    if log_arch == '':
+        log_arch = data_path + "/dblogs/arch"
 
     replace_items["place_holder_ip"] = local_ip
     replace_items["place_holder_mgr_recovery_retry_count"] = str(mgr_num_nodes*100)
@@ -126,13 +133,13 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index):
     os.makedirs(log_bin_arg)
     os.makedirs(log_arch)
     jsconf.close()
-    return is_master_node, server_port, data_path, log_path, log_dir, db_inst_user
+    return is_master_node, server_port, data_path, log_path, log_arch, log_dir, db_inst_user
 
 
 
 class MysqlConfig:
 
-    def __init__(self, config_template_file, install_path,  server_id, cluster_id, shard_id, mgr_config_path, target_node_index):
+    def __init__(self, config_template_file, install_path,  server_id, cluster_id, shard_id, mgr_config_path, target_node_index, usemgr):
 
 
         replace_items = {
@@ -143,27 +150,27 @@ class MysqlConfig:
                 "place_holder_cluster_id": str(cluster_id),
                 }
 
-        is_master, server_port, data_path, log_path, log_dir, user = make_mgr_args(mgr_config_path, replace_items, target_node_index)
+        is_master, server_port, data_path, log_path, log_arch, log_dir, user = make_mgr_args(mgr_config_path, replace_items, target_node_index)
         config_template = open(config_template_file, 'r').read()
         conf = param_replace(config_template, replace_items)
+        group = grp.getgrgid(pwd.getpwnam(user).pw_gid).gr_name
 
-        etc_path = install_path + "/etc"
-        if not os.path.exists(etc_path):
-            os.mkdir(etc_path)
-        cnf_file_path = etc_path+"/my_"+ str(server_port) +".cnf"
+        subprocess.call(["chown", "-R", user+":"+group, log_path])
+        subprocess.call(["chown", "-R", user+":"+group, log_arch])
+        subprocess.call(["chown", "-R", user+":"+group, data_path])
+
+        cnf_file_path = data_path+"/my_"+ str(server_port) +".cnf"
         cnf_file = open(cnf_file_path, 'w')
         cnf_file.write(conf)
         cnf_file.close()
-
-        subprocess.call(["chown", user+":users", etc_path, "-R"])
-        subprocess.call(["chown", user+":users", log_path, "-R"])
-        subprocess.call(["chown", user+":users", data_path, "-R"])
         
-        if is_master:
-            start_mgr_sql = 'SET GLOBAL group_replication_bootstrap_group=ON; START GROUP_REPLICATION; SET GLOBAL group_replication_bootstrap_group=OFF; '
-            #select group_replication_set_as_primary(@@server_uuid);  this can't be done now, it requires a quorum.
-        else:
-            start_mgr_sql = 'START GROUP_REPLICATION;'
+        start_mgr_sql = ''
+        if usemgr:
+            if is_master:
+                start_mgr_sql = 'SET GLOBAL group_replication_bootstrap_group=ON; START GROUP_REPLICATION; SET GLOBAL group_replication_bootstrap_group=OFF; '
+                #select group_replication_set_as_primary(@@server_uuid);  this can't be done now, it requires a quorum.
+            else:
+                start_mgr_sql = 'START GROUP_REPLICATION;'
 
         cmdstr = " ".join(["su", user, "-c",  "\""+install_path+"/bin/mysqld", "--defaults-file="+cnf_file_path, "--user="+user, "--initialize \""]) #, stdout=install_inf)
         os.system(cmdstr)
@@ -183,30 +190,37 @@ class MysqlConfig:
         # the python mysql client lib cuts long sql text to multiple sections, so do 'set sql_log_bin=0; ' at beginning of each query.
         init_sql = "set sql_log_bin=0; create user clustmgr identified by 'clustmgr_pwd'; grant  Select,Insert,Update,Delete,GROUP_REPLICATION_ADMIN,SYSTEM_VARIABLES_ADMIN on *.* to clustmgr@'%';flush privileges;" \
                 + "set sql_log_bin=0; create user repl identified by 'repl_pwd'; grant replication slave,replication client, BACKUP_ADMIN, CLONE_ADMIN on *.* to 'repl'@'%' ; flush privileges;" \
-                + "set sql_log_bin=0; create user agent@localhost identified by 'agent_pwd'; grant all on *.* to 'agent'@'localhost' with grant option;flush privileges;"
+                + "set sql_log_bin=0; create user agent@localhost identified by 'agent_pwd'; grant all on *.* to 'agent'@'localhost' with grant option;flush privileges;select version();"
         init_sql2 = "set sql_log_bin=0; create user pgx identified by 'pgx_pwd' ; grant Select,Insert,Update,Delete,Create,Drop,Process,References,Index,Alter,SHOW DATABASES,CREATE TEMPORARY TABLES,LOCK TABLES,Execute,CREATE VIEW,SHOW VIEW,CREATE ROUTINE,ALTER ROUTINE,Event,Trigger,REPLICATION CLIENT,REPLICATION SLAVE,reload,GROUP_REPLICATION_ADMIN,SYSTEM_VARIABLES_ADMIN on *.* to  'pgx'@'%'; flush privileges;" \
                 + "set sql_log_bin=0;delete from mysql.db where Db='test\_%' and Host='%' ;delete from mysql.db where Db='test' and Host='%';flush privileges;"  \
                 + '''CHANGE MASTER TO MASTER_USER='repl', MASTER_PASSWORD='repl_pwd' FOR CHANNEL 'group_replication_recovery';'''   \
-                + start_mgr_sql + '''select now();select version();'''
-        sys_cmd = " ".join([install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-p'+"'"+root_init_password+"'", '-e', '"' + change_pwd_sql + init_sql + '"'])
+                + start_mgr_sql
+        sys_cmd = " ".join([install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-p'+"'"+root_init_password+"'", '-e', '"' + change_pwd_sql + init_sql + '"', '; exit 0'])
 
         add_proc_cmd = " ".join([install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-proot <' , install_path+'/dba_tools/seq_reserve_vals.sql' ])
-
+	initcmd2 = " ".join([install_path + "/bin/mysql", "--connect-expired-password", '-S' + data_path + '/prod/mysql.sock', '-uroot -proot', '-e', '"' + init_sql2 + '"\n'])
         for idx in xrange(30):
-            os.system(sys_cmd)
-            os.system(" ".join([install_path + "/bin/mysql", "--connect-expired-password", '-S' + data_path + '/prod/mysql.sock', '-uroot -proot', '-e', '"' + init_sql2 + '"\n']))
-            os.system(add_proc_cmd)
-            print "Waiting for mysqld to startup: " + str(idx*5)
+            result = subprocess.check_output(sys_cmd, shell = True, stderr=subprocess.STDOUT)
+            if result.find('version') >= 0:
+                break
             os.system('sleep 5\n')
-
-        os.system("sed -e 's/#super_read_only=OFF/super_read_only=ON/' -i " + cnf_file_path)
+        os.system(initcmd2)
+        os.system(add_proc_cmd)
+        if usemgr:
+            os.system("sed -e 's/#super_read_only=OFF/super_read_only=ON/' -i " + cnf_file_path)
 #        uuid_cmd_str = install_path + "/bin/mysql  --silent --skip-column-names --connect-expired-password -S" + data_path + '/prod/mysql.sock -uroot -proot -e "set @uuid_str=uuid(); set global group_replication_group_name=@uuid_str; ' + start_mgr_sql+ ' select @uuid_str;"\n'
 #        uuid_cmd=shlex.split(uuid_cmd_str)
 #        popen_ret = subprocess.Popen(uuid_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=install_path)
 #        uuid_str, errmsg = popen_ret.communicate()
 #        uuid_str = uuid_str[:-1] # chop off the trailing \n
 #        subprocess.call(shlex.split("sed -e 's/place_holder_mgr_group_name/" + uuid_str + "/' -i " + cnf_file_path))
-        
+        # append the new instance's port to datadir mapping into instance_list.txt
+        etc_path = install_path + "/etc"
+        if not os.path.exists(etc_path):
+        	os.mkdir(etc_path)
+		subprocess.call(["chown", "-R", user+":"+group, etc_path])
+        conf_list_file = etc_path+"/instances_list.txt"
+        os.system("echo \"" + str(server_port) + "==>" + cnf_file_path + "\" >> " + conf_list_file)
 
 def print_usage():
     print 'Usage: install-mysql.py mgr_config=/path/of/mgr/config/file target_node_index=idx [dbcfg=/db/config/template/path/template.cnf] [cluster_id=ID] [shard_id=N] [server_id=N]'
@@ -238,9 +252,12 @@ if __name__ == "__main__":
             config_template_file = "./template.cnf"
         if not os.path.exists(config_template_file):
             raise ValueError("DB config template file {} doesn't exist!".format(config_template_file))
-        install_path = os.getcwd()[:-9]
+        install_path = os.path.dirname(os.getcwd())
         print "Installing mysql instance, please wait..."
-        MysqlConfig(config_template_file, install_path, server_id, cluster_id, shard_id, mgr_config_path, target_node_index)
+        # undocument option, used for internal testing.
+        usemgr=args.get('usemgr', 'True')
+        usemgr=strtobool(usemgr)
+        MysqlConfig(config_template_file, install_path, server_id, cluster_id, shard_id, mgr_config_path, target_node_index, usemgr)
     except KeyError, e:
         print_usage()
         print e

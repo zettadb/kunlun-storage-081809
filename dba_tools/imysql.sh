@@ -14,7 +14,7 @@ fi
 echo "cmd: ${cmd}"
 
 port=$1
-base_dir=`pwd | awk -F"/dba_tools$" '{print $1}'`
+base_dir=`dirname "$PWD"`
 etcfile=${base_dir}/etc/my_${port}.cnf
 sockfile=` grep "^socket *=" ${etcfile}  | tail -n1| awk -F"=" '{print $2}'`
 
