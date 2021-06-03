@@ -29,13 +29,12 @@ def get_root_init_pwd(logdir):
             return ret
 
 
-def make_mgr_args(mgr_config_path, replace_items, target_node_index):
+def make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr):
     jsconf = open(mgr_config_path)
     jstr = jsconf.read()
     jscfg = json.loads(jstr)
 
     nodeidx = target_node_index
-    group_uuid = jscfg['group_uuid']
     idx = 0
     white_list = ''
     local_addr = ''
@@ -104,12 +103,13 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index):
         log_arch = data_path + "/dblogs/arch"
 
     replace_items["place_holder_ip"] = local_ip
-    replace_items["place_holder_mgr_recovery_retry_count"] = str(mgr_num_nodes*100)
-    replace_items["place_holder_mgr_local_address"] = local_addr
-    replace_items["place_holder_mgr_seeds"] = seeds
-    replace_items["place_holder_mgr_whitelist"] = white_list
-    replace_items["place_holder_mgr_member_weight"] = str(weight)
-    replace_items["place_holder_mgr_group_name"] = group_uuid
+    if usemgr:
+        replace_items["place_holder_mgr_recovery_retry_count"] = str(mgr_num_nodes*100)
+        replace_items["place_holder_mgr_local_address"] = local_addr
+        replace_items["place_holder_mgr_seeds"] = seeds
+        replace_items["place_holder_mgr_whitelist"] = white_list
+        replace_items["place_holder_mgr_member_weight"] = str(weight)
+        replace_items["place_holder_mgr_group_name"] = jscfg['group_uuid']
     replace_items["prod_dir"] = prod_dir
     replace_items["data_dir"] = data_dir
     replace_items["innodb_dir"] = innodb_dir
@@ -150,7 +150,7 @@ class MysqlConfig:
                 "place_holder_cluster_id": str(cluster_id),
                 }
 
-        is_master, server_port, data_path, log_path, log_arch, log_dir, user = make_mgr_args(mgr_config_path, replace_items, target_node_index)
+        is_master, server_port, data_path, log_path, log_arch, log_dir, user = make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr)
         config_template = open(config_template_file, 'r').read()
         conf = param_replace(config_template, replace_items)
         group = grp.getgrgid(pwd.getpwnam(user).pw_gid).gr_name
@@ -178,8 +178,9 @@ class MysqlConfig:
         assert(root_init_password != None)
 
         # Enable the mgr options, which have to be commented at initialization because plugins are not loaded when mysqld is started with --initialize.
-        os.system("sed -e 's/^#group_replication_/group_replication_/' -i " + cnf_file_path)
-        os.system("sed -e 's/^#clone_/clone_/' -i " + cnf_file_path)
+        if usemgr:
+	    os.system("sed -e 's/^#group_replication_/group_replication_/' -i " + cnf_file_path)
+	    os.system("sed -e 's/^#clone_/clone_/' -i " + cnf_file_path)
 
         os.system(" ".join(["su", user, "-c", "\"./bootmysql.sh", install_path, cnf_file_path, user+"\""]))
 
