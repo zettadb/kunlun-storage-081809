@@ -155,11 +155,18 @@ class MysqlConfig:
         conf = param_replace(config_template, replace_items)
         group = grp.getgrgid(pwd.getpwnam(user).pw_gid).gr_name
 
+        etc_path = install_path + "/etc"
+        conf_list_file = etc_path+"/instances_list.txt"
+        portstr = str(server_port)
+        ret = os.system("grep '^" + portstr + "==>' " + conf_list_file + " >/dev/null 2>/dev/null")
+        if ret == 0:
+            raise Exception("Invalid port:" + portstr + ", The port is in use!")
+
         subprocess.call(["chown", "-R", user+":"+group, log_path])
         subprocess.call(["chown", "-R", user+":"+group, log_arch])
         subprocess.call(["chown", "-R", user+":"+group, data_path])
 
-        cnf_file_path = data_path+"/my_"+ str(server_port) +".cnf"
+        cnf_file_path = data_path+"/my_"+ portstr +".cnf"
         cnf_file = open(cnf_file_path, 'w')
         cnf_file.write(conf)
         cnf_file.close()
@@ -217,11 +224,9 @@ class MysqlConfig:
 #        uuid_str = uuid_str[:-1] # chop off the trailing \n
 #        subprocess.call(shlex.split("sed -e 's/place_holder_mgr_group_name/" + uuid_str + "/' -i " + cnf_file_path))
         # append the new instance's port to datadir mapping into instance_list.txt
-        etc_path = install_path + "/etc"
         if not os.path.exists(etc_path):
         	os.mkdir(etc_path)
 		subprocess.call(["chown", "-R", user+":"+group, etc_path])
-        conf_list_file = etc_path+"/instances_list.txt"
         os.system("echo \"" + str(server_port) + "==>" + cnf_file_path + "\" >> " + conf_list_file)
 
 def print_usage():
