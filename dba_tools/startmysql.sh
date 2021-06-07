@@ -11,16 +11,16 @@ base_dir=`dirname "$PWD"`
 
 conf_list_file=${base_dir}/etc/instances_list.txt
 if [ ! -f  $conf_list_file ];then
-	echo "have not found instances list file:$conf_list_file, can not start\n"
+	echo "Can not find MySQL instances list file:$conf_list_file, can't not start the instance.\n"
 	exit -1
 fi
 
 etcfile=`grep "$port==>" $conf_list_file | head -1 | sed "s/^$port==>//g"` 
 if test "$etcfile" = ""; then
-	echo "have not found instance with port:$port, can not start\n"
+	echo "Can not find MySQL instance with port:$port, can not start the instance\n"
 	exit -1
 elif test ! -f $etcfile; then
-	echo "have not found config file:$etcfile, can not start\n"
+	echo "Can not find MySQL instance with config file:$etcfile, can not start the instance\n"
 	exit -1
 fi
 
@@ -35,7 +35,7 @@ cmd="ps -ef | grep ${programe} | grep -v vim | grep -v grep | grep -v defunct | 
 pid=$(eval ${cmd})
 #echo $pid
 if [ $pid"e" != "e" ];then
-	echo "mysqld is running,can't start"
+	echo "mysqld is already running."
 	exit -1
 fi
 
@@ -46,4 +46,3 @@ if [ $shelluser != $mysqluser ];then
 else
 	./bootmysql.sh $base_dir ${etcfile} ${mysqluser}
 fi
-

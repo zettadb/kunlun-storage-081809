@@ -18,16 +18,16 @@ base_dir=`dirname "$PWD"`
 
 conf_list_file=${base_dir}/etc/instances_list.txt
 if [ ! -f  $conf_list_file ];then
-	echo "have not found instances list file:$conf_list_file, can not start\n"
+	echo "Can not find instances list file:$conf_list_file\n"
 	exit -1
 fi
 
 etcfile=`grep "$port==>" $conf_list_file | head -1 | sed "s/^$port==>//g"`
 if test "$etcfile" = ""; then
-	echo "have not found instance with port:$port, can not start\n"
+	echo "Can not find instance with port:$port\n"
 	exit -1
 elif test ! -f $etcfile; then
-	echo "have not found config file:$etcfile, can not start\n"
+	echo "Can not find config file:$etcfile\n"
 	exit -1
 fi
 

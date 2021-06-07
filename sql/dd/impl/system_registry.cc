@@ -219,6 +219,7 @@ void System_tables::add_remaining_dd_tables() {
   register_table("role_edges", system);
   register_table("servers", system);
   register_table("server_cost", system);
+  register_table("sequences", system);
   register_table("slave_master_info", system);
   register_table("slave_master_info_backup", system);
   register_table("slave_worker_info", system);
