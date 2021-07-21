@@ -1,6 +1,6 @@
-if [ $# -ne 1 ]
+if [ $# -ne 2 ]
 then
-    echo "usage: ./post-install.sh <installation-dir-full-path>"
+    echo "usage: ./post-install.sh <installation-dir-full-path> <build-type>"
     exit 0;
 fi
 
@@ -40,8 +40,11 @@ ls | xargs ldd >> ./prog-deps.txt 2>/dev/null
 cat ./prog-deps.txt | sed -n '/^.* => .*$/p' | sed  's/^.* => \(.*\)(.*$/\1/g' | sort | uniq | sed /^.*percona.*$/d | while read f ; do  cp $f $1/lib/deps ; done
 rm ./prog-deps.txt
 
-# strip binaries
-cd $1
-strip -gs bin/* 2>/dev/null
-strip -gs lib/* 2>/dev/null
+# strip binaries if necessary
+# echo "build-type: $2"
+if test "$2" = "Release"; then
+        cd $1
+        strip -gs bin/* 2>/dev/null
+        strip -gs lib/* 2>/dev/null
+fi
 
