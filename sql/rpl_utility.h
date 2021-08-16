@@ -38,6 +38,7 @@
 
 struct MY_BITMAP;
 
+#include <string>
 #ifdef MYSQL_SERVER
 #include <memory>
 
