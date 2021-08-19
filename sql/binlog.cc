@@ -9536,7 +9536,9 @@ commit_stage:
       If rotate fails then depends on binlog_error_action variable
       appropriate action will be taken inside rotate call.
     */
-    int error = rotate(false, &check_purge);
+    int error = 0;
+    if (!thd->is_one_phase_commit())
+      error = rotate(false, &check_purge);
     mysql_mutex_unlock(&LOCK_log);
 
     if (error)
