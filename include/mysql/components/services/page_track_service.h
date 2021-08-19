@@ -34,6 +34,7 @@ class THD;
 #define MYSQL_THD void *
 #endif
 
+#include <cstdint>
 /**
   SE for the page tracking. Currently supports only in InnoDB.
 */

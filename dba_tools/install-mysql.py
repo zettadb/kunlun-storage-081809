@@ -162,9 +162,11 @@ class MysqlConfig:
         if ret == 0:
             raise Exception("Invalid port:" + portstr + ", The port is in use!")
 
-        subprocess.call(["chown", "-R", user+":"+group, log_path])
-        subprocess.call(["chown", "-R", user+":"+group, log_arch])
-        subprocess.call(["chown", "-R", user+":"+group, data_path])
+        euser = pwd.getpwuid(os.geteuid()).pw_name
+        if euser == 'root':
+            subprocess.call(["chown", "-R", user+":"+group, log_path])
+            subprocess.call(["chown", "-R", user+":"+group, log_arch])
+            subprocess.call(["chown", "-R", user+":"+group, data_path])
 
         cnf_file_path = data_path+"/my_"+ portstr +".cnf"
         cnf_file = open(cnf_file_path, 'w')
@@ -225,8 +227,9 @@ class MysqlConfig:
 #        subprocess.call(shlex.split("sed -e 's/place_holder_mgr_group_name/" + uuid_str + "/' -i " + cnf_file_path))
         # append the new instance's port to datadir mapping into instance_list.txt
         if not os.path.exists(etc_path):
-        	os.mkdir(etc_path)
-		subprocess.call(["chown", "-R", user+":"+group, etc_path])
+            os.mkdir(etc_path)
+            if euser == 'root':
+                subprocess.call(["chown", "-R", user+":"+group, etc_path])
         os.system("echo \"" + str(server_port) + "==>" + cnf_file_path + "\" >> " + conf_list_file)
 
 def print_usage():
