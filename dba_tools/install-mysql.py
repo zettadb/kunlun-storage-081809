@@ -29,9 +29,10 @@ def get_root_init_pwd(logdir):
             return ret
 
 
-def make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr):
+def make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr, dbuser):
     jsconf = open(mgr_config_path)
     jstr = jsconf.read()
+    jsconf.close()
     jscfg = json.loads(jstr)
 
     nodeidx = target_node_index
@@ -71,7 +72,7 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr):
             innodb_buffer_pool_size = val['innodb_buffer_pool_size']
             server_data_prefix = val['data_dir_path']
             server_log_prefix = val['log_dir_path']
-            db_inst_user = val['user']
+            db_inst_user = val.get('user', dbuser)
             if val.has_key('innodb_log_dir_path'):
                 log_arch = val['innodb_log_dir_path']
 
@@ -86,7 +87,9 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr):
         raise RuntimeError("Config error, no primary node specified.")
 
     if server_xport == mgr_port or server_port == mgr_port or server_port == server_xport :
-        raise ValueError("Config error, MGR port(" + str(mgr_port) + "), client regular port(" + str(server_port) + ") and X protocol port(" + str(server_xport) + ") must be different.")
+        raise ValueError("Config error, MGR port(" + str(mgr_port) + "), client regular port(" +
+			str(server_port) + ") and X protocol port(" + str(server_xport) +
+			") must be different.")
     data_path = server_data_prefix + "/" + str(server_port)
     prod_dir = data_path + "/prod"
     data_dir = data_path + "/dbdata_raw/data"
@@ -98,7 +101,7 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr):
     log_relay = log_path + "/dblogs/relay"
     log_bin_arg = log_path + "/dblogs/bin"
 
-	# seperate binlog/relaylogs from innodb redo logs, store them in two dirs so possibly two disks to do parallel IO.
+    # seperate binlog/relaylogs from innodb redo logs, store them in two dirs so possibly two disks to do parallel IO.
     if log_arch == '':
         log_arch = data_path + "/dblogs/arch"
 
@@ -123,24 +126,13 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr):
     replace_items["place_holder_port"] = str(server_port)
     replace_items["place_holder_user"] = db_inst_user
 
-    
-    os.makedirs(prod_dir)
-    os.makedirs(data_dir)
-    os.makedirs(innodb_dir)
-    os.makedirs(log_dir)
-    os.makedirs(tmp_dir)
-    os.makedirs(log_relay)
-    os.makedirs(log_bin_arg)
-    os.makedirs(log_arch)
-    jsconf.close()
-    return is_master_node, server_port, data_path, log_path, log_arch, log_dir, db_inst_user
-
-
+    dirs=[prod_dir, data_dir, innodb_dir, log_dir, tmp_dir, log_relay, log_bin_arg, log_arch]
+    return is_master_node, server_port, data_path, log_path, log_arch, log_dir, db_inst_user, dirs
 
 class MysqlConfig:
 
-    def __init__(self, config_template_file, install_path,  server_id, cluster_id, shard_id, mgr_config_path, target_node_index, usemgr):
-
+    def __init__(self, config_template_file, install_path,  server_id, cluster_id,
+		 shard_id, mgr_config_path, target_node_index, usemgr, dbuser):
 
         replace_items = {
                 #"place_holder_extra_port": str(int(server_port)+10000), mysql8.0 doesn't have 'extra_port' var.
@@ -150,7 +142,8 @@ class MysqlConfig:
                 "place_holder_cluster_id": str(cluster_id),
                 }
 
-        is_master, server_port, data_path, log_path, log_arch, log_dir, user = make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr)
+        is_master, server_port, data_path, log_path, log_arch, log_dir, user, dirs = make_mgr_args(
+	    mgr_config_path, replace_items, target_node_index, usemgr, dbuser)
         config_template = open(config_template_file, 'r').read()
         conf = param_replace(config_template, replace_items)
         group = grp.getgrgid(pwd.getpwnam(user).pw_gid).gr_name
@@ -161,6 +154,9 @@ class MysqlConfig:
         ret = os.system("grep '^" + portstr + "==>' " + conf_list_file + " >/dev/null 2>/dev/null")
         if ret == 0:
             raise Exception("Invalid port:" + portstr + ", The port is in use!")
+
+	for d in dirs:
+	    os.makedirs(d)
 
         euser = pwd.getpwuid(os.geteuid()).pw_name
         if euser == 'root':
@@ -181,7 +177,12 @@ class MysqlConfig:
             else:
                 start_mgr_sql = 'START GROUP_REPLICATION;'
 
-        cmdstr = " ".join(["su", user, "-c",  "\""+install_path+"/bin/mysqld", "--defaults-file="+cnf_file_path, "--user="+user, "--initialize \""]) #, stdout=install_inf)
+        if euser == user:
+            cmdstr = " ".join([install_path+"/bin/mysqld", "--defaults-file="+cnf_file_path, "--user="+user, "--initialize"])
+        else:
+            cmdstr = " ".join(["su", user, "-c",  "\""+install_path+"/bin/mysqld",
+		     "--defaults-file="+cnf_file_path, "--user="+user, "--initialize \""])
+
         os.system(cmdstr)
         root_init_password = get_root_init_pwd(log_dir)
         assert(root_init_password != None)
@@ -191,7 +192,10 @@ class MysqlConfig:
 	    os.system("sed -e 's/^#group_replication_/group_replication_/' -i " + cnf_file_path)
 	    os.system("sed -e 's/^#clone_/clone_/' -i " + cnf_file_path)
 
-        os.system(" ".join(["su", user, "-c", "\"./bootmysql.sh", install_path, cnf_file_path, user+"\""]))
+        if euser == user:
+            os.system(" ".join(["./bootmysql.sh", install_path, cnf_file_path, user]))
+	else:
+            os.system(" ".join(["su", user, "-c", "\"./bootmysql.sh", install_path, cnf_file_path, user+"\""]))
 
         os.system("sed -e 's/#skip_name_resolve=on/skip_name_resolve=on/' -i " + cnf_file_path)
 
@@ -215,8 +219,12 @@ class MysqlConfig:
                 break
             os.system('sleep 5\n')
         if not usemgr or is_master:
-            os.system(add_proc_cmd)
-        os.system(initcmd2)
+            ret = os.system(add_proc_cmd)
+            if ret != 0:
+                raise Exception("Fail to execute command:" + add_proc_cmd)
+        ret = os.system(initcmd2)
+        if ret != 0:
+            raise Exception("Fail to execute command:" + initcmd2)
         if usemgr:
             os.system("sed -e 's/#super_read_only=OFF/super_read_only=ON/' -i " + cnf_file_path)
 #        uuid_cmd_str = install_path + "/bin/mysql  --silent --skip-column-names --connect-expired-password -S" + data_path + '/prod/mysql.sock -uroot -proot -e "set @uuid_str=uuid(); set global group_replication_group_name=@uuid_str; ' + start_mgr_sql+ ' select @uuid_str;"\n'
@@ -233,9 +241,9 @@ class MysqlConfig:
         os.system("echo \"" + str(server_port) + "==>" + cnf_file_path + "\" >> " + conf_list_file)
 
 def print_usage():
-    print 'Usage: install-mysql.py mgr_config=/path/of/mgr/config/file target_node_index=idx [dbcfg=/db/config/template/path/template.cnf] [cluster_id=ID] [shard_id=N] [server_id=N]'
+    print 'Usage: install-mysql.py mgr_config=/path/of/mgr/config/file target_node_index=idx [dbcfg=/db/config/template/path/template.cnf] [user=db_init_user] [cluster_id=ID] [shard_id=N] [server_id=N]'
 
-# install-mysql.py mgr_config=/path/of/mgr/config/file target_node_index=idx [dbcfg=/db/config/template/path/template.cnf] [cluster_id=ID] [shard_id=N] [server_id=N]
+# install-mysql.py mgr_config=/path/of/mgr/config/file target_node_index=idx [dbcfg=/db/config/template/path/template.cnf] [user=db_init_user] [cluster_id=ID] [shard_id=N] [server_id=N]
 if __name__ == "__main__":
     try:
         args = dict([arg.split('=') for arg in sys.argv[1:]])
@@ -267,7 +275,10 @@ if __name__ == "__main__":
         # undocument option, used for internal testing.
         usemgr=args.get('usemgr', 'True')
         usemgr=strtobool(usemgr)
-        MysqlConfig(config_template_file, install_path, server_id, cluster_id, shard_id, mgr_config_path, target_node_index, usemgr)
+        dbuser = pwd.getpwuid(os.getuid()).pw_name
+        if args.has_key('user'):
+            dbuser = args['user']
+        MysqlConfig(config_template_file, install_path, server_id, cluster_id, shard_id, mgr_config_path, target_node_index, usemgr, dbuser)
     except KeyError, e:
         print_usage()
         print e
