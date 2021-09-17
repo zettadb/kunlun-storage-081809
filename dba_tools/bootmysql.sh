@@ -4,7 +4,7 @@ if [ $# -ne 3 ];then
         exit -1
 fi
 
-ulimit -n 300000
+sudo ulimit -n 300000
 
 base_dir=$1
 etcfile=$2
