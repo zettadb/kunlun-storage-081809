@@ -177,10 +177,11 @@ class MysqlConfig:
             else:
                 start_mgr_sql = 'START GROUP_REPLICATION;'
 
+        cmd0 = "export LD_LIBRARY_PATH=" + install_path + "/lib:$LD_LIBRARY_PATH;"
         if euser == user:
-            cmdstr = " ".join([install_path+"/bin/mysqld", "--defaults-file="+cnf_file_path, "--user="+user, "--initialize"])
+            cmdstr = " ".join([cmd0, install_path+"/bin/mysqld", "--defaults-file="+cnf_file_path, "--user="+user, "--initialize"])
         else:
-            cmdstr = " ".join(["su", user, "-c",  "\""+install_path+"/bin/mysqld",
+            cmdstr = " ".join(["su", user, "-c",  "\"", cmd0, install_path+"/bin/mysqld",
 		     "--defaults-file="+cnf_file_path, "--user="+user, "--initialize \""])
 
         os.system(cmdstr)
@@ -193,9 +194,9 @@ class MysqlConfig:
 	    os.system("sed -e 's/^#clone_/clone_/' -i " + cnf_file_path)
 
         if euser == user:
-            os.system(" ".join(["./bootmysql.sh", install_path, cnf_file_path, user]))
+            os.system(" ".join([cmd0, "./bootmysql.sh", install_path, cnf_file_path, user]))
 	else:
-            os.system(" ".join(["su", user, "-c", "\"./bootmysql.sh", install_path, cnf_file_path, user+"\""]))
+            os.system(" ".join(["su", user, "-c", "\"", cmd0, "./bootmysql.sh", install_path, cnf_file_path, user+"\""]))
 
         os.system("sed -e 's/#skip_name_resolve=on/skip_name_resolve=on/' -i " + cnf_file_path)
 
@@ -209,10 +210,10 @@ class MysqlConfig:
                 + "set sql_log_bin=0;delete from mysql.db where Db='test\_%' and Host='%' ;delete from mysql.db where Db='test' and Host='%';flush privileges;"  \
                 + '''CHANGE MASTER TO MASTER_USER='repl', MASTER_PASSWORD='repl_pwd' FOR CHANNEL 'group_replication_recovery';'''   \
                 + start_mgr_sql
-        sys_cmd = " ".join([install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-p'+"'"+root_init_password+"'", '-e', '"' + change_pwd_sql + init_sql + '"', '; exit 0'])
+        sys_cmd = " ".join([cmd0, install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-p'+"'"+root_init_password+"'", '-e', '"' + change_pwd_sql + init_sql + '"', '; exit 0'])
 
-        add_proc_cmd = " ".join([install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-proot <' , install_path+'/dba_tools/seq_reserve_vals.sql' ])
-	initcmd2 = " ".join([install_path + "/bin/mysql", "--connect-expired-password", '-S' + data_path + '/prod/mysql.sock', '-uroot -proot', '-e', '"' + init_sql2 + '"\n'])
+        add_proc_cmd = " ".join([cmd0, install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-proot <' , install_path+'/dba_tools/seq_reserve_vals.sql' ])
+	initcmd2 = " ".join([cmd0, install_path + "/bin/mysql", "--connect-expired-password", '-S' + data_path + '/prod/mysql.sock', '-uroot -proot', '-e', '"' + init_sql2 + '"\n'])
         for idx in xrange(30):
             result = subprocess.check_output(sys_cmd, shell = True, stderr=subprocess.STDOUT)
             if result.find('version') >= 0:
