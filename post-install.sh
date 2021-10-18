@@ -30,16 +30,37 @@ cp install-mysql.py  monitormysql.sh  startmysql.sh    template.cnf  $1/dba_tool
 cd $1/dba_tools
 ls *.sh |while read f ; do chmod -R 0755 $f ; done
 
+rm -fr $1/mysql-test
 
 cd $1/lib
 mkdir -p deps
 
 #copy all dependent dynamic lib files into lib/deps
 cd $1/bin
+ls | while read f; do
+    if test -L "$f"; then
+        relpath="`readlink $f`"
+        test -f "$relpath" && rm -f "$f" && cp -f "$relpath" $f && rm -f "$relpath"
+    fi
+done
+
+cd $1/lib
+ls | while read f; do
+    if test -L "$f"; then
+        relpath="`readlink $f`"
+        test -e "$relpath" || rm -f "$f"
+    fi
+done
+
+
+cd $1/bin
 export LD_LIBRARY_PATH="$1/lib:$LD_LIBRARY_PATH"
 rm -f ./prog-deps.txt
 ls | xargs ldd >> ./prog-deps.txt 2>/dev/null
-cat ./prog-deps.txt | sed -n '/^.* => .*$/p' | sed  's/^.* => \(.*\)(.*$/\1/g' | sort | uniq | sed /^.*percona.*$/d | sed '/^ *$/d' | while read f ; do  cp $f $1/lib/deps ; done
+cat ./prog-deps.txt | sed -n '/^.* => .*$/p' | sed  's/^.* => \(.*\)(.*$/\1/g' | sort | uniq | sed /^.*percona.*$/d | sed '/^ *$/d' | while read f ; do
+	echo "install $f to lib/deps"
+	cp $f $1/lib/deps
+done
 rm ./prog-deps.txt
 
 # strip binaries if necessary
