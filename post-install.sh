@@ -31,6 +31,8 @@ cd $1/dba_tools
 ls *.sh |while read f ; do chmod -R 0755 $f ; done
 
 rm -fr $1/mysql-test
+mkdir -p $1/resources
+cp -f $srcroot/resources/mysql-connector-python-2.1.3.tar.gz $1/resources
 
 cd $1/lib
 mkdir -p deps
