@@ -44,6 +44,8 @@
 #include <map>
 #include <utility>
 #include <list>
+#include <unistd.h>
+#include <sys/types.h>
 
 #include "caching_sha2_passwordopt-vars.h"
 #include "client/client_priv.h"
@@ -353,6 +355,7 @@ static uint opt_zstd_compress_level = default_zstd_compression_level;
 static char *opt_compress_algorithm = nullptr;
 
 static bool opt_print_table_metadata;
+static bool opt_truncate_file_by_stoptime;
 
 /**
   For storing information of the Format_description_event of the currently
@@ -404,8 +407,11 @@ static char converted_filename[1024] = {'\0'};
 static my_off_t converted_pos = 0;
 
 static Exit_status convert_gtid_to_filepos();
-static Exit_status gtid_to_filepos_impl(std::list<char *>::iterator iter,Deal_event_type deal_type);
+static Exit_status gtid_to_filepos_impl(std::list<char *>::iterator &iter,Deal_event_type deal_type);
 static Exit_status get_the_logfile_names(int argc, char **argv);
+
+static Exit_status find_stop_pos_by_time(std::list<char *>::iterator &iter,my_off_t *pos);
+static Exit_status truncate_file_by_stoptime();
 
 /* It is set to true when BEGIN is found, and false when the transaction ends.
  */
@@ -744,6 +750,7 @@ static Exit_status get_the_logfile_names(int argc, char **argv){
     if (!(ptr =
               (char *)my_malloc(PSI_NOT_INSTRUMENTED, strlen(buf), MYF(0)))) {
       error("Could not allocat the memory");
+      my_fclose(index_file,MYF(0));
       return ERROR_STOP;
     }
     strcpy(ptr,buf);
@@ -754,6 +761,7 @@ static Exit_status get_the_logfile_names(int argc, char **argv){
     warning("Get log file path: '%s'",ptr);
 #endif
   }
+  my_fclose(index_file,MYF(0));
   return OK_CONTINUE;
 }
 
@@ -1697,6 +1705,11 @@ static struct my_option my_long_options[] = {
      " [options] or specified by the index_file, print nothing.",
      &opt_gtid_to_filepos_str, &opt_gtid_to_filepos_str, 0, GET_STR_ALLOC, 
      REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+    {"truncate_file_by_stoptime", 0,
+     "Truncate the log file by the stop datetime string. if the option is specified and "
+     "stop datetime is valid, log event timestamp later than the stop time will be discard."
+     "Further more, the accociated index file will also be rewrite",
+     &opt_truncate_file_by_stoptime,&opt_truncate_file_by_stoptime, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
     {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}};
 
 /**
@@ -2034,6 +2047,66 @@ static Exit_status dump_single_log(PRINT_EVENT_INFO *print_event_info,
     ERROR_STOP: Indicate some failure options happend.
     OK_CONTINUE: Indicate the whole log has already processed finished, and target gtid is not found.
  */
+static Exit_status truncate_file_by_stoptime(){
+  auto iter_current = log_files.begin();
+  char * last_file_name = nullptr; 
+  my_off_t stop_pos = 0;
+
+  for(;iter_current != log_files.end();++iter_current){
+    if(OK_STOP == find_stop_pos_by_time(iter_current,&stop_pos)){
+      break;
+    }
+  }
+
+  if(stop_pos){
+    last_file_name = *iter_current;
+    // truncate current file
+    int retval = truncate(*iter_current,stop_pos);
+    if(retval){
+      error("truncate file error: %s",strerror(errno));
+      return ERROR_STOP;
+    }
+    // unlink the rest log file
+    for(++iter_current;iter_current!=log_files.end();++iter_current){
+      retval = unlink(*iter_current);
+      if(retval){
+        error("unlink log file error: %s",strerror(errno));
+        return ERROR_STOP;
+      }
+    }
+    //Rebuild the log_index_file if provided.
+    if(opt_binlog_index_file_str != nullptr){
+      FILE *index_file;
+      if(!(index_file = my_fopen(opt_binlog_index_file_str,O_WRONLY|O_TRUNC,MYF(MY_WME)))){
+        error("Could not read binlog index file '%s'", opt_binlog_index_file_str);
+        return ERROR_STOP;
+      }
+
+      for(auto iter = log_files.begin();iter!=log_files.end();iter++){
+        char buf[1024] = {'\0'};
+        sprintf(buf,"%s\n",*iter);
+        if(my_fwrite(index_file,(uchar *)buf,strlen(buf),MYF(MY_WME | MY_FNABP))){
+          error("Could not write log index file '%s'", opt_binlog_index_file_str);
+          return ERROR_STOP;
+        }
+        if(strcmp(*iter,last_file_name) == 0) break;
+      }
+    }
+    fprintf(result_file,"Truncate finished!\n");
+  }
+  else{
+    fprintf(result_file,"Invalid operation\n");
+    return ERROR_STOP;
+  }
+  return OK_STOP;
+}
+
+/**
+  retval: Exit_status
+    OK_STOP: Indicate that found the target gtid or Previous gtid_set contain the target gtid.
+    ERROR_STOP: Indicate some failure options happend.
+    OK_CONTINUE: Indicate the whole log has already processed finished, and target gtid is not found.
+ */
 static Exit_status convert_gtid_to_filepos(){
   auto iter_post = log_files.begin();
   bool contained = false;
@@ -2078,7 +2151,8 @@ static Exit_status dump_multiple_logs(int argc, char **argv) {
      Set safe delimiter, to dump things
      like CREATE PROCEDURE safely
   */
-  if (!raw_mode && opt_gtid_to_filepos_str == nullptr) {
+  if (!raw_mode && 
+      (opt_gtid_to_filepos_str == nullptr && !opt_truncate_file_by_stoptime)) {
     fprintf(result_file, "DELIMITER /*!*/;\n");
   }
   my_stpcpy(print_event_info.delimiter, "/*!*/;");
@@ -2089,13 +2163,15 @@ static Exit_status dump_multiple_logs(int argc, char **argv) {
   print_event_info.skip_gtids = opt_skip_gtids;
   print_event_info.print_table_metadata = opt_print_table_metadata;
 
-  // 
-
   // Dump all logs.
   my_off_t save_stop_position = stop_position;
   stop_position = ~(my_off_t)0;
 
   get_the_logfile_names(argc,argv);
+
+  if(opt_truncate_file_by_stoptime && stop_datetime != MY_TIME_T_MAX){
+    return truncate_file_by_stoptime();
+  }
 
   if(opt_gtid_to_filepos_str != nullptr){
     return convert_gtid_to_filepos();
@@ -2765,7 +2841,7 @@ end:
     ERROR_STOP: Indicate some failure options happend.
     OK_CONTINUE: Indicate the whole log has already processed finished, and target gtid is not found.
  */
-static Exit_status gtid_to_filepos_impl(std::list<char *>::iterator iter,Deal_event_type deal_type){
+static Exit_status gtid_to_filepos_impl(std::list<char *>::iterator & iter,Deal_event_type deal_type){
 
   const char *logname = *iter; 
 
@@ -2806,10 +2882,8 @@ static Exit_status gtid_to_filepos_impl(std::list<char *>::iterator iter,Deal_ev
         if binlog wasn't closed properly ("in use" flag is set) don't complain
         about a corruption, just move on.
       */
-      if ((mysqlbinlog_file_reader.format_description_event()->header()->flags &
-           LOG_EVENT_BINLOG_IN_USE_F) ||mysqlbinlog_file_reader.get_error_type() ==
-              Binlog_read_error::READ_EOF)
-        continue;
+      if (mysqlbinlog_file_reader.get_error_type() == Binlog_read_error::READ_EOF)
+        break;
 
       error(
           "Could not read entry at offset %s: "
@@ -2859,6 +2933,71 @@ static Exit_status gtid_to_filepos_impl(std::list<char *>::iterator iter,Deal_ev
   return OK_STOP;
 }
 
+/**
+  retval: Exit_status
+    OK_STOP: Indicate that found the target gtid or Previous gtid_set contain the target gtid.
+    ERROR_STOP: Indicate some failure options happend.
+    OK_CONTINUE: Indicate the whole log has already processed finished, and target gtid is not found.
+ */
+static Exit_status find_stop_pos_by_time(std::list<char *>::iterator &iter,my_off_t *pos){
+  const char *logname = *iter; 
+
+  ulong max_event_size = 0;
+  mysql_get_option(nullptr, MYSQL_OPT_MAX_ALLOWED_PACKET, &max_event_size);
+  Mysqlbinlog_file_reader mysqlbinlog_file_reader(opt_verify_binlog_checksum,
+                                                  max_event_size);
+
+  Format_description_log_event *fdle = nullptr;
+  if (mysqlbinlog_file_reader.open(logname, start_position, &fdle)) {
+    error("%s", mysqlbinlog_file_reader.get_error_str());
+    return ERROR_STOP;
+  }
+
+  if (strcmp(logname, "-") == 0)
+    mysqlbinlog_file_reader.event_data_istream()->set_multi_binlog_magic();
+
+  for (;;) {
+    char llbuff[21];
+    my_off_t old_off = mysqlbinlog_file_reader.position();
+
+    Log_event *ev = mysqlbinlog_file_reader.read_event_object();
+    if (mysqlbinlog_file_reader.event_data_istream()
+            ->is_5_7_binlog_encrypted() &&
+        mysqlbinlog_file_reader.get_error_type() !=
+            Binlog_read_error::READ_EOF &&
+        !ev) {
+      if (force_opt) {
+        const char empty_header[LOG_EVENT_MINIMAL_HEADER_LEN] = {0};
+        Unknown_log_event *unknown_event = new Unknown_log_event(
+            empty_header, mysqlbinlog_file_reader.format_description_event());
+        unknown_event->what = Unknown_log_event::kind::ENCRYPTED_WITH_5_7;
+        ev = unknown_event;
+      }
+    }
+    if (ev == nullptr) {
+      /*
+        if binlog wasn't closed properly ("in use" flag is set) don't complain
+        about a corruption, just move on.
+      */
+      if (mysqlbinlog_file_reader.get_error_type() == Binlog_read_error::READ_EOF)
+        break;
+
+      error(
+          "Could not read entry at offset %s: "
+          "Error in log format or read error 1.",
+          llstr(old_off, llbuff));
+      error("%s", mysqlbinlog_file_reader.get_error_str());
+      return ERROR_STOP;
+    }
+
+    if (((my_time_t)(ev->common_header->when.tv_sec) >= stop_datetime)) {
+      /* found the stop anchor */
+      *pos = old_off;
+      return OK_STOP;
+    }
+  }
+  return OK_CONTINUE;
+}
 
 /* Post processing of arguments to check for conflicts and other setups */
 static int args_post_process(void) {
@@ -2872,7 +3011,8 @@ static int args_post_process(void) {
     return ERROR_STOP;
   }
 
-  if (raw_mode && opt_gtid_to_filepos_str == nullptr) {
+  if (raw_mode && 
+      (opt_gtid_to_filepos_str == nullptr && !opt_truncate_file_by_stoptime)) {
     if (one_database)
       warning("The --database option is ignored with --raw mode");
 
@@ -3050,7 +3190,8 @@ int main(int argc, char **argv) {
   else
     load_processor.init_by_cur_dir();
 
-  if (!raw_mode && opt_gtid_to_filepos_str == nullptr) {
+  if (!raw_mode && 
+      (opt_gtid_to_filepos_str == nullptr && !opt_truncate_file_by_stoptime)) {
     fprintf(result_file, "/*!50530 SET @@SESSION.PSEUDO_SLAVE_MODE=1*/;\n");
 
     if (disable_log_bin)
@@ -3086,7 +3227,8 @@ int main(int argc, char **argv) {
 
   retval = dump_multiple_logs(argc, argv);
 
-  if (!raw_mode && opt_gtid_to_filepos_str == nullptr) {
+  if (!raw_mode && 
+      (opt_gtid_to_filepos_str == nullptr && !opt_truncate_file_by_stoptime)) {
     fprintf(result_file, "# End of log file\n");
 
     fprintf(result_file,
