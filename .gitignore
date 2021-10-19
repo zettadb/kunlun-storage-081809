@@ -30,3 +30,13 @@
 *.exe
 *.out
 *.app
+
+# Compiled result
+bld/
+build.sh
+
+# Tag system
+CsdbBuild.sh
+GPATH
+GRTAGS
+GTAGS
