@@ -15,6 +15,7 @@ import shlex
 import pwd
 import grp
 from distutils.util import strtobool
+import argparse
 
 def param_replace(string, rep_dict):
     pattern = re.compile("|".join([re.escape(k) for k in rep_dict.keys()]), re.M)
@@ -29,7 +30,7 @@ def get_root_init_pwd(logdir):
             return ret
 
 
-def make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr, dbuser):
+def make_mgr_args(mgr_config_path, replace_items, target_node_index, ha_mode, dbuser):
     jsconf = open(mgr_config_path)
     jstr = jsconf.read()
     jsconf.close()
@@ -106,7 +107,7 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr, dbu
         log_arch = data_path + "/dblogs/arch"
 
     replace_items["place_holder_ip"] = local_ip
-    if usemgr:
+    if ha_mode == 'mgr':
         replace_items["place_holder_mgr_recovery_retry_count"] = str(mgr_num_nodes*100)
         replace_items["place_holder_mgr_local_address"] = local_addr
         replace_items["place_holder_mgr_seeds"] = seeds
@@ -132,7 +133,7 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, usemgr, dbu
 class MysqlConfig:
 
     def __init__(self, config_template_file, install_path,  server_id, cluster_id,
-		 shard_id, mgr_config_path, target_node_index, usemgr, dbuser):
+		 shard_id, mgr_config_path, target_node_index, ha_mode, dbuser):
 
         replace_items = {
                 #"place_holder_extra_port": str(int(server_port)+10000), mysql8.0 doesn't have 'extra_port' var.
@@ -143,7 +144,7 @@ class MysqlConfig:
                 }
 
         is_master, server_port, data_path, log_path, log_arch, log_dir, user, dirs = make_mgr_args(
-	    mgr_config_path, replace_items, target_node_index, usemgr, dbuser)
+	    mgr_config_path, replace_items, target_node_index, ha_mode, dbuser)
         config_template = open(config_template_file, 'r').read()
         conf = param_replace(config_template, replace_items)
         group = grp.getgrgid(pwd.getpwnam(user).pw_gid).gr_name
@@ -170,7 +171,7 @@ class MysqlConfig:
         cnf_file.close()
         
         start_mgr_sql = ''
-        if usemgr:
+        if ha_mode == 'mgr':
             if is_master:
                 start_mgr_sql = 'SET GLOBAL group_replication_bootstrap_group=ON; START GROUP_REPLICATION; SET GLOBAL group_replication_bootstrap_group=OFF; '
                 #select group_replication_set_as_primary(@@server_uuid);  this can't be done now, it requires a quorum.
@@ -189,7 +190,7 @@ class MysqlConfig:
         assert(root_init_password != None)
 
         # Enable the mgr options, which have to be commented at initialization because plugins are not loaded when mysqld is started with --initialize.
-        if usemgr:
+        if ha_mode == 'mgr':
 	    os.system("sed -e 's/^#group_replication_/group_replication_/' -i " + cnf_file_path)
 	    os.system("sed -e 's/^#clone_/clone_/' -i " + cnf_file_path)
 
@@ -219,14 +220,14 @@ class MysqlConfig:
             if result.find('version') >= 0:
                 break
             os.system('sleep 5\n')
-        if not usemgr or is_master:
+        if ha_mode == 'no_rep' or is_master:
             ret = os.system(add_proc_cmd)
             if ret != 0:
                 raise Exception("Fail to execute command:" + add_proc_cmd)
         ret = os.system(initcmd2)
         if ret != 0:
             raise Exception("Fail to execute command:" + initcmd2)
-        if usemgr:
+        if ha_mode == 'mgr':
             os.system("sed -e 's/#super_read_only=OFF/super_read_only=ON/' -i " + cnf_file_path)
 #        uuid_cmd_str = install_path + "/bin/mysql  --silent --skip-column-names --connect-expired-password -S" + data_path + '/prod/mysql.sock -uroot -proot -e "set @uuid_str=uuid(); set global group_replication_group_name=@uuid_str; ' + start_mgr_sql+ ' select @uuid_str;"\n'
 #        uuid_cmd=shlex.split(uuid_cmd_str)
@@ -242,44 +243,27 @@ class MysqlConfig:
         os.system("echo \"" + str(server_port) + "==>" + cnf_file_path + "\" >> " + conf_list_file)
 
 def print_usage():
-    print 'Usage: install-mysql.py mgr_config=/path/of/mgr/config/file target_node_index=idx [dbcfg=/db/config/template/path/template.cnf] [user=db_init_user] [cluster_id=ID] [shard_id=N] [server_id=N]'
+    print 'Usage: install-mysql.py --config /path/of/mgr/config/file --target_node_index idx [--dbcfg /db/config/template/path/template.cnf] [--user db_init_user] [--cluster_id ID] [--shard_id N] [--server_id N] [--ha_mode mgr|no_rep|rbr]'
 
-# install-mysql.py mgr_config=/path/of/mgr/config/file target_node_index=idx [dbcfg=/db/config/template/path/template.cnf] [user=db_init_user] [cluster_id=ID] [shard_id=N] [server_id=N]
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Install the storage node.')
+    parser.add_argument('--config', type=str, help="The config path", required=True)
+    parser.add_argument('--target_node_index', type=int, help = "target node", required=True)
+    parser.add_argument('--dbcfg', type=str, help = "target node", default='./template.cnf')
+    parser.add_argument('--user', type=str, help = "user_used_to_initialize", default=pwd.getpwuid(os.getuid()).pw_name)
+    parser.add_argument('--cluster_id', type=int, help = "the id for the cluster", default=0)
+    parser.add_argument('--shard_id', type=int, help = "the id for the shard",default=0)
+    parser.add_argument('--server_id', type=int, help = "the id for the server", default=random.randint(1,65535))
+    parser.add_argument('--ha_mode', type=str, default='mgr', choices=['mgr','no_rep', 'rbr'])
+    args = parser.parse_args()
     try:
-        args = dict([arg.split('=') for arg in sys.argv[1:]])
-        if not args.has_key('mgr_config') or not args.has_key('target_node_index'):
-            print_usage()
-            raise RuntimeError('Must specify mgr_config and target_node_index arguments.')
-        mgr_config_path = args["mgr_config"]
-        target_node_index = int(args["target_node_index"])
-
-        shard_id = 0
-        cluster_id = 0
-        if args.has_key('cluster_id'):
-            cluster_id = int(args['cluster_id'])
-        if args.has_key('shard_id'):
-            shard_id = int(args['shard_id'])
-        if args.has_key('server_id'):
-            server_id = int(args['server_id'])
-        else:
-            server_id = str(random.randint(1,65535))
-
-        if args.has_key('dbcfg') :
-            config_template_file = args['dbcfg']
-        else:
-            config_template_file = "./template.cnf"
-        if not os.path.exists(config_template_file):
-            raise ValueError("DB config template file {} doesn't exist!".format(config_template_file))
+        if not os.path.exists(args.dbcfg):
+            raise ValueError("DB config template file {} doesn't exist!".format(args.dbcfg))
         install_path = os.path.dirname(os.getcwd())
         print "Installing mysql instance, please wait..."
         # undocument option, used for internal testing.
-        usemgr=args.get('usemgr', 'True')
-        usemgr=strtobool(usemgr)
-        dbuser = pwd.getpwuid(os.getuid()).pw_name
-        if args.has_key('user'):
-            dbuser = args['user']
-        MysqlConfig(config_template_file, install_path, server_id, cluster_id, shard_id, mgr_config_path, target_node_index, usemgr, dbuser)
+        MysqlConfig(args.dbcfg, install_path, args.server_id, args.cluster_id,
+            args.shard_id, args.config, args.target_node_index, args.ha_mode, args.user)
     except KeyError, e:
         print_usage()
         print e
