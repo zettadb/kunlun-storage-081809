@@ -18,14 +18,9 @@ parser.add_argument('--meta_config', type=str, help="meta-shard config file path
 parser.add_argument('--cluster_name', type=str)
 parser.add_argument('--cluster_owner', type=str); # owner name, e.g. department/group name, or employee name
 parser.add_argument('--cluster_biz', type=str); # used in which business ?
-parser.add_argument('--usemgr', type=bool, default=True); # used for internal testing, --usemgr=True|False
+parser.add_argument('--ha_mode', type=str, default='mgr', choices=['mgr','no_rep', 'rbr'])
 
 args = parser.parse_args()
-args.ha_mode = 0
-ha_mode = 'no_rep'
-if args.usemgr:
-    ha_mode = 'mgr'
-    args.ha_mode = 1
 
 meta_jsconf = open(args.meta_config)
 meta_jstr = meta_jsconf.read()
@@ -47,7 +42,7 @@ print "Creating database cluster " + args.cluster_name
 print "Step 1. Inserting meta-data row for database cluster " + args.cluster_name
 meta_cursor0.execute("start transaction")
 
-meta_cursor.execute(stmt, (args.cluster_name, args.cluster_owner, ddl_log_tblname, args.cluster_biz, ha_mode))
+meta_cursor.execute(stmt, (args.cluster_name, args.cluster_owner, ddl_log_tblname, args.cluster_biz, args.ha_mode))
 
 meta_cursor0.execute("commit")
 
@@ -61,5 +56,5 @@ meta_conn.close()
 
 print "Step 5. Adding storage shards into cluster " + args.cluster_name
 install_names=[''] # add all shards
-add_shards.add_shards_to_cluster(mysql_conn_params, args.cluster_name, args.shards_config, install_names, args.usemgr)
+add_shards.add_shards_to_cluster(mysql_conn_params, args.cluster_name, args.shards_config, install_names, args.ha_mode)
 print "Installation complete for cluster " + args.cluster_name
