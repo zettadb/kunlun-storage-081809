@@ -5,7 +5,7 @@ then
 fi
 
 #copy doc
-cp INSTALL.kunlun.md $1
+cp -f INSTALL.kunlun.md $1
 
 srcroot=`pwd`
 
@@ -19,12 +19,13 @@ ls |while read f ; do chmod 0755 $f ; done
 
 #copy stuff to binary
 cd $srcroot/dba_tools
-cp libjemalloc.so.3.6.0 $1/.run_so
-cp libjemalloc.so.3.6.0  $1/share_lib
+cp -f libjemalloc.so.3.6.0 $1/.run_so
+cp -f libjemalloc.so.3.6.0  $1/share_lib
 
 # these files must also exist in dba_tools/ dir
-cp bootmysql.sh  imysql.sh mgr_config.json  seq_reserve_vals.sql stopmysql.sh  template-small.cnf  $1/dba_tools
-cp install-mysql.py  monitormysql.sh  startmysql.sh    template.cnf  $1/dba_tools
+cp -f bootmysql.sh imysql.sh mgr_config.json seq_reserve_vals.sql stopmysql.sh template-small.cnf  $1/dba_tools
+cp -f install-mysql.py monitormysql.sh  startmysql.sh template.cnf  $1/dba_tools
+cp -f add_shards.py bootstrap.py common.py create_cluster.py meta_inuse.sql $1/dba_tools
 
 #make sure all scripts are executable
 cd $1/dba_tools
@@ -61,7 +62,7 @@ rm -f ./prog-deps.txt
 ls | xargs ldd >> ./prog-deps.txt 2>/dev/null
 cat ./prog-deps.txt | sed -n '/^.* => .*$/p' | sed  's/^.* => \(.*\)(.*$/\1/g' | sort | uniq | sed /^.*percona.*$/d | sed '/^ *$/d' | while read f ; do
 	echo "install $f to lib/deps"
-	cp $f $1/lib/deps
+	cp -f $f $1/lib/deps
 done
 rm ./prog-deps.txt
 
