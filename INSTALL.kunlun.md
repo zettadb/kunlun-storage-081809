@@ -34,12 +34,12 @@ DO NOT copy everything in deps into lib at once, otherwise your linux OS or any 
 
 Use the ./dba_tools/install-mysql.py script to install an MGR node. To do so, one first needs to prepare an MGR cluster configuration file using the template in dba_tools/mgr_config.json. In this doc below the config file will be called 'my-shards.json'.
 
-One should set the 'mgr_config' argument to the path of the MGR cluster configuration file.
+One should set the 'onfig' argument to the path of the MGR cluster configuration file.
 
 One should set the 'target_node_index' argument of install-mysql.py to specify the target db instance to install. 'target_node_index' is the target db instance's array index in the 'nodes' array of my-shards.json. Note that one should always install the group replication primary node before installing any of its replicas, and make sure the primary node specified in config file is really currently the primary node of the MGR shard.
 
 Then in Kunlun-storage/dba_tools directory, do below:
-`python install-mysql.py mgr_config=./my-shards.json target_node_index=0`
+`python install-mysql.py --config=./my-shards.json --target_node_index=0`
 There are other optional parameters to install-mysql.py, but they are not used for now or can be generated automatically except the 'dbcfg' argument, as detailed below.
 
 To startup mysql server, use the script 'startmysql.sh' Kunlun-storage/dba_tools: ./startmysql.sh 3306
@@ -55,7 +55,7 @@ And ./dba_tools/template-small.cnf is suitable for Kunlun-storage db instances w
 
 If one needs other config templates than ./dba_tools/template.cnf, specifiy the 'dbcfg' argument. For example when you have an binary installation of original mysql-8.0.x or a percona-mysql-8.0.x-y, you can copy the Kunlun-storage/dba_tools directory into that installation's root directory, in order to make use of the installation scripts and config templates. And you can create another template file and use it to create db instances as below example.
 
-e.g. `python install-mysql.py mgr_config=./mgr_config0.json target_node_index=0 dbcfg=./mysql-template-small.cnf`
+e.g. `python install-mysql.py --config=./mgr_config0.json --target_node_index=0 --dbcfg=./mysql-template-small.cnf`
 
 ### Shard Config File Explained
 
