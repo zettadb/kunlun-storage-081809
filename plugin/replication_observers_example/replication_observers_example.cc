@@ -476,7 +476,8 @@ Binlog_relay_IO_observer relay_io_observer = {
     binlog_relay_after_read_event,
     binlog_relay_after_queue_event,
     binlog_relay_after_reset_slave,
-    binlog_relay_applier_log_event};
+    binlog_relay_applier_log_event,
+    nullptr};
 
 /*
   Validate plugin requirements on server code.

@@ -704,6 +704,17 @@ typedef int (*applier_log_event_t)(Binlog_relay_IO_param *param,
                                    Trans_param *trans_param, int &out);
 
 /**
+  This callback is called before event gets applied
+
+  @param param  Observer common parameter
+  @param reason Event skip reason
+
+  @retval 0 Success
+  @retval 1 Failure
+*/
+typedef int (*applier_before_dispatch_event_t)( void *param );
+
+/**
    Observes and extends the service of slave IO thread.
 */
 typedef struct Binlog_relay_IO_observer {
@@ -718,6 +729,7 @@ typedef struct Binlog_relay_IO_observer {
   after_queue_event_t after_queue_event;
   after_reset_slave_t after_reset_slave;
   applier_log_event_t applier_log_event;
+  applier_before_dispatch_event_t applier_before_dispatch_event;
 } Binlog_relay_IO_observer;
 
 /**
