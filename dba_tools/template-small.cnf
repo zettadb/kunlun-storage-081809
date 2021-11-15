@@ -10,7 +10,7 @@ core-file-size=unlimited
 
 # The MySQL server
 [mysqld]
-early-plugin-load=keyring_file.so
+#early-plugin-load=keyring_file.so
 #keyring_file_data=place_holder_keyring_file_path
 core-file
 # required unique id between 1 and 2^32 - 1
