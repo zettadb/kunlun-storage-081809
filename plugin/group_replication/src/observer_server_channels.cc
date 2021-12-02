@@ -208,4 +208,5 @@ Binlog_relay_IO_observer binlog_IO_observer = {
     group_replication_after_read_event,
     group_replication_after_queue_event,
     group_replication_after_reset_slave,
-    group_replication_applier_log_event};
+    group_replication_applier_log_event,
+    nullptr};

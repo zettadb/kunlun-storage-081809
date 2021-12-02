@@ -200,7 +200,8 @@ Binlog_relay_IO_observer relay_io_observer = {
     repl_semi_slave_read_event,    // after_read_event
     repl_semi_slave_queue_event,   // after_queue_event
     repl_semi_reset_slave,         // reset
-    repl_semi_apply_slave          // apply
+    repl_semi_apply_slave,          // apply
+    nullptr
 };
 
 static int semi_sync_slave_plugin_init(void *p) {

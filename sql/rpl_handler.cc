@@ -964,6 +964,15 @@ int Binlog_relay_IO_delegate::applier_log_event(THD *thd, int &out) {
   return ret;
 }
 
+int Binlog_relay_IO_delegate::applier_before_dispatch_event(void *param){
+  DBUG_TRACE;
+
+  int ret = 0;
+  FOREACH_OBSERVER(ret, applier_before_dispatch_event, (param));
+  return ret;
+
+}
+
 int register_trans_observer(Trans_observer *observer, void *p) {
   return transaction_delegate->add_observer(observer, (st_plugin_int *)p);
 }

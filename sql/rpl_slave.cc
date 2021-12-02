@@ -4769,6 +4769,16 @@ static int exec_relay_log_event(THD *thd, Relay_log_info *rli,
       DBUG_ASSERT(rli->last_master_timestamp >= 0);
     }
 
+    /*
+      global consistent restore filter  
+    */
+    if (RUN_HOOK(binlog_relay_io, applier_before_dispatch_event,
+                 ((void *)ev))){
+      mysql_mutex_unlock(&rli->data_lock);
+      delete ev;
+      return 1;
+    }
+
     if (rli->is_until_satisfied_before_dispatching_event(ev)) {
       /*
         Setting abort_slave flag because we do not want additional message about
@@ -4780,12 +4790,12 @@ static int exec_relay_log_event(THD *thd, Relay_log_info *rli,
       return 1;
     }
 
-    { /**
-               The following failure injecion works in cooperation with tests
-               setting @@global.debug= 'd,incomplete_group_in_relay_log'.
-               Xid or Commit events are not executed to force the slave sql
-               read hanging if the realy log does not have any more events.
-            */
+    { /*
+        The following failure injecion works in cooperation with tests
+        setting @@global.debug= 'd,incomplete_group_in_relay_log'.
+        Xid or Commit events are not executed to force the slave sql
+        read hanging if the realy log does not have any more events.
+      */
       DBUG_EXECUTE_IF(
           "incomplete_group_in_relay_log",
           if (ev->get_type_code() == binary_log::XID_EVENT ||
