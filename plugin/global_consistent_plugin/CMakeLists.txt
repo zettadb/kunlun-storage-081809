@@ -21,7 +21,7 @@
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301  USA
 
 ADD_DEFINITIONS(-DLOG_COMPONENT_TAG="global_consistent_apply")
-
+INCLUDE_DIRECTORIES(SYSTEM ${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
 MYSQL_ADD_PLUGIN(global_consistent_apply
   consistent_view.cc
   global_consistent_apply.cc
