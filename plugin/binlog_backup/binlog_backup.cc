@@ -277,7 +277,7 @@ static void run_cmd(MYSQL_SESSION session, enum_server_command cmd,
 }
 
 static void binlog_flush_thread_clean_func(void *p) {
-  MYSQL_SESSION session = (MYSQL_SESSION) p;
+  MYSQL_SESSION session = (MYSQL_SESSION)p;
   /* Close session: Must pass */
   srv_session_close(session);
   srv_session_deinit_thread();
@@ -310,7 +310,7 @@ static void *mysql_binlog_flush_interval(void *p) {
   struct mysql_binlog_backup_context *con =
       (struct mysql_binlog_backup_context *)p;
   char buffer[RUNTIME_STRING_BUFFER];
-  MYSQL_SESSION session;
+  MYSQL_SESSION session = nullptr;
   COM_DATA cmd;
 
   /* push the clean handler */
@@ -411,7 +411,7 @@ static void *mysql_binlog_backup(void *p) {
           sleep(1);
         }
         break;
-      case -1:
+      case MY_FILE_ERROR:
         /* error occours */
         ErrorPluginLog(con->plugin_log_file, "%s", strerror(errno));
         break;
@@ -593,7 +593,7 @@ static int binlog_backup_plugin_deinit(void *p) {
   my_thread_join(&con->binlog_flush_interval_thread, &dummy_retval);
 
   my_close(con->plugin_log_file, MYF(0));
-  my_close(con->backup_state_file,MYF(0));
+  my_close(con->backup_state_file, MYF(0));
 
   delete con->rfbpt;
 

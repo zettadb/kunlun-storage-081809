@@ -10,7 +10,7 @@ class HdfsFile : public RemoteFileBase {
 
 public:
   HdfsFile();
-  ~HdfsFile();
+  ~HdfsFile() override;
 
   /**
    * use popen to invoke the `hadoop` client program

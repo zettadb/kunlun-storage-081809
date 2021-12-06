@@ -192,7 +192,7 @@ void Consistent_view::set_bitmap_by_xid(const COMP_ID & comp_id ,
 }
 
 bool Consistent_view::all_finish(){
-  bool tmp;
+  bool tmp = false;
   for(auto &t:m_bitmap){
     tmp &= t.second; 
   }

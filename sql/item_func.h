@@ -1792,7 +1792,7 @@ class Item_func_bit_count final : public Item_int_func {
 
 class Item_func_shift : public Item_func_bit {
  protected:
-  bool binary_result_requires_binary_second_arg() const { return false; }
+  bool binary_result_requires_binary_second_arg() const override { return false; }
   template <bool to_left>
   longlong eval_int_op();
   template <bool to_left>
