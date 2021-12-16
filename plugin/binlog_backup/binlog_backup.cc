@@ -109,15 +109,14 @@ static void init_binlog_backup_psi_keys() {
 
 #define RUNTIME_STRING_BUFFER 2048
 
-/* Declare the protocal_callbacks */
-struct st_command_service_cbs protocol_callbacks;
-
 static char plugin_log_filename[FN_REFLEN];
 static char backup_state_filename[FN_REFLEN];
 static char binlog_machine_info[FN_REFLEN]; // _192#168#0#135_8001_
 static std::string log_place_holder = "";
 
 enum REMOTE_STORAGE_TYPE { HDFS = 0, ANONYMOUS };
+static const char *cluster_id = nullptr;
+static const char *shard_id = nullptr;
 
 struct mysql_binlog_backup_context {
   my_thread_handle binlog_backup_thread;
@@ -126,15 +125,82 @@ struct mysql_binlog_backup_context {
   File backup_state_file;
   RemoteFileBase *rfbpt;
   REMOTE_STORAGE_TYPE storage_type;
-  void *p;
+  void *p; // for srv_session_init_thd
 };
 static std::string binlog_fn = "";
 
+/* Begin declare the protocal_callbacks */
+static DYNAMIC_ARRAY protocal_cb_result;
+static int sql_handle_start_row(void *) { return 0; }
+static int sql_start_result_metadata(void *, uint, uint, const CHARSET_INFO *) {
+  return false;
+}
+static void sql_handle_error(void *, uint, const char *const,
+                             const char *const) {}
+static int sql_field_metadata(void *, struct st_send_field *,
+                              const CHARSET_INFO *) {
+  return false;
+};
+static int sql_end_result_metadata(void *, uint, uint) { return false; };
+static int sql_end_row(void *) { return false; };
+static void sql_abort_row(void *) { DBUG_TRACE; };
+static ulong sql_get_client_capabilities(void *) { return 0; };
+static int sql_get_null(void *) { return false; };
+static int sql_get_integer(void *, longlong) { return false; };
+static int sql_get_longlong(void *, longlong, uint) { return false; };
+static int sql_get_decimal(void *, const decimal_t *) { return false; };
+static int sql_get_double(void *, double, uint32) { return false; };
+static int sql_get_date(void *, const MYSQL_TIME *) { return false; };
+static int sql_get_time(void *, const MYSQL_TIME *, uint) { return false; };
+static int sql_get_datetime(void *, const MYSQL_TIME *, uint) { return false; };
+static void sql_handle_ok(void *, uint, uint, ulonglong, ulonglong,
+                          const char *const){};
+static void sql_shutdown(void *, int){};
+
+static int sql_handle_store_string(void *p, const char *const value,
+                                   size_t length, const CHARSET_INFO *const) {
+  DBUG_TRACE;
+  struct mysql_binlog_backup_context *ctx =
+      (struct mysql_binlog_backup_context *)p;
+
+  char buffer[RUNTIME_STRING_BUFFER];
+  InfoPluginLog(ctx->plugin_log_file, "get protocal str %s", value);
+  char *v = (char *)malloc(length + 1);
+  bzero((void *)v, length + 1);
+  strcpy(v, value);
+  insert_dynamic(&protocal_cb_result, (void *)(&v));
+  return 0;
+}
+struct st_command_service_cbs protocol_callbacks = {
+    sql_start_result_metadata,
+    sql_field_metadata,
+    sql_end_result_metadata,
+    sql_handle_start_row,
+    sql_end_row,
+    sql_abort_row,
+    sql_get_client_capabilities,
+    sql_get_null,
+    sql_get_integer,
+    sql_get_longlong,
+    sql_get_decimal,
+    sql_get_double,
+    sql_get_date,
+    sql_get_time,
+    sql_get_datetime,
+    sql_handle_store_string,
+    sql_handle_ok,
+    sql_handle_error,
+    sql_shutdown,
+};
+
+/* End declare the protocal_callbacks */
+
 static RemoteFileBase *get_backup_instance(REMOTE_STORAGE_TYPE s_type) {
   if (s_type == HDFS) {
-    return new HdfsFile();
+    return new HdfsFile(cluster_id, shard_id);
   }
-  return new HdfsFile();
+  // TODO: only hdfs supported right now
+  return new HdfsFile(cluster_id, shard_id);
 }
 
 // get last backuped file
@@ -253,12 +319,13 @@ static void print_cmd(enum_server_command cmd, COM_DATA *data, void *p) {
 static void switch_user(MYSQL_SESSION session) {
   MYSQL_SECURITY_CONTEXT sc;
   thd_get_security_context(srv_session_info_get_thd(session), &sc);
-  security_context_lookup(sc, "root", "127.0.0.1", "localhost", "mysql");
+  security_context_lookup(sc, "root", "127.0.0.1", "localhost", "kunlun_sysdb");
 }
 
-static void run_cmd(MYSQL_SESSION session, enum_server_command cmd,
-                    COM_DATA *data, struct mysql_binlog_backup_context *ctx,
-                    void *p MY_ATTRIBUTE((unused))) {
+static void
+run_cmd(MYSQL_SESSION session, enum_server_command cmd, COM_DATA *data,
+        struct mysql_binlog_backup_context *ctx MY_ATTRIBUTE((unused)),
+        void *p MY_ATTRIBUTE((unused))) {
   char buffer[RUNTIME_STRING_BUFFER];
   enum cs_text_or_binary txt_or_bin = CS_TEXT_REPRESENTATION;
   struct mysql_binlog_backup_context *con =
@@ -266,7 +333,7 @@ static void run_cmd(MYSQL_SESSION session, enum_server_command cmd,
   print_cmd(cmd, data, p);
   int fail = command_service_run_command(session, cmd, data,
                                          &my_charset_utf8_general_ci,
-                                         &protocol_callbacks, txt_or_bin, ctx);
+                                         &protocol_callbacks, txt_or_bin, con);
   if (fail) {
     ErrorPluginLog(con->plugin_log_file,
                    "run_statement failed, error code: %d\n", fail);
@@ -338,7 +405,7 @@ static void *mysql_binlog_flush_interval(void *p) {
   cmd.com_init_db.length = strlen("mysql");
   run_cmd(session, COM_INIT_DB, &cmd, nullptr, p);
 
-  char stmt_buffer[512] = {0};
+  char stmt_buffer[512] = {'\0'};
 
   while (1) {
     if (timesup()) {
@@ -352,6 +419,46 @@ static void *mysql_binlog_flush_interval(void *p) {
   }
   pthread_cleanup_pop(0);
   return 0;
+}
+
+static bool get_cluster_shard_name(struct mysql_binlog_backup_context *con) {
+
+  DBUG_TRACE;
+  char buffer[RUNTIME_STRING_BUFFER];
+  MYSQL_SESSION session = nullptr;
+  COM_DATA cmd;
+  /* Open session: Must pass */
+  InfoPluginLog(con->plugin_log_file, "[thd_srv_session_open]%s\n",
+                log_place_holder.c_str());
+  session = srv_session_open(NULL, NULL);
+  if (!session) {
+    ErrorPluginLog(con->plugin_log_file, "srv_session_open failed%s\n",
+                   log_place_holder.c_str());
+    return false;
+  }
+  InfoPluginLog(con->plugin_log_file, "srv_session_open successfully%s\n",
+                log_place_holder.c_str());
+  switch_user(session);
+  // init db
+  // cmd.com_init_db.db_name = "kunlun_sysdb";
+  // cmd.com_init_db.length = strlen("kunlun_sysdb");
+  // run_cmd(session, COM_INIT_DB, &cmd, nullptr, con);
+
+  char stmt_buffer[4096] = {'\0'};
+  memset(stmt_buffer, 0, sizeof(stmt_buffer));
+  sprintf(stmt_buffer, "select `cluster_name`,`shard_name` from "
+                       "`kunlun_sysdb`.`cluster_info` limit 1");
+  // sprintf(stmt_buffer, "select 1");
+  set_query_in_com_data(&cmd, stmt_buffer);
+  run_cmd(session, COM_QUERY, &cmd, nullptr, con);
+
+  /* assign the result to the var*/
+  shard_id = *((char **)pop_dynamic(&protocal_cb_result));
+  cluster_id = *((char **)pop_dynamic(&protocal_cb_result));
+
+  /* Close session: Must pass */
+  srv_session_close(session);
+  return true;
 }
 
 static void *mysql_binlog_backup(void *p) {
@@ -466,7 +573,7 @@ static int binlog_backup_plugin_init(void *p) {
   init_binlog_backup_psi_keys();
 #endif
 
-  memset(&protocol_callbacks, 0, sizeof(protocol_callbacks));
+  // memset(&protocol_callbacks, 0, sizeof(protocol_callbacks));
   struct mysql_binlog_backup_context *con;
   my_thread_attr_t attr; /* Thread attributes */
   char buffer[RUNTIME_STRING_BUFFER];
@@ -525,6 +632,17 @@ static int binlog_backup_plugin_init(void *p) {
   snprintf(binlog_machine_info, sizeof(binlog_machine_info), "I%s_P%u",
            bind_address.c_str(), mysqld_port);
 
+  /* init cluster shard info */
+
+  my_init_dynamic_array(&protocal_cb_result, PSI_NOT_INSTRUMENTED,
+                        sizeof(char **), NULL, 4, 2);
+  if (!get_cluster_shard_name(con)) {
+    my_error(
+        ER_INTERNAL_ERROR, MYF(0),
+        "Invalid Kunlun Cluster/Shard Name, Please check related system table");
+    return 1;
+  }
+
   /*
     No threads exist at this point in time, so this is thread safe.
   */
@@ -542,14 +660,14 @@ static int binlog_backup_plugin_init(void *p) {
   if (my_thread_create(&con->binlog_backup_thread, &attr, mysql_binlog_backup,
                        (void *)con) != 0) {
     fprintf(stderr, "Could not create binlog_backup thread!\n");
-    exit(0);
+    return 1;
   }
 
   /* now create the `flush logs` interval thread */
   if (my_thread_create(&con->binlog_flush_interval_thread, &attr,
                        mysql_binlog_flush_interval, (void *)con) != 0) {
     fprintf(stderr, "Could not create binlog_flush_interval thread!\n");
-    exit(0);
+    return 1;
   }
   plugin->data = (void *)con;
 
@@ -579,9 +697,6 @@ static int binlog_backup_plugin_deinit(void *p) {
   struct tm tm_tmp;
   void *dummy_retval;
 
-  my_thread_cancel(&con->binlog_backup_thread);
-  my_thread_cancel(&con->binlog_flush_interval_thread);
-
   localtime_r(&result, &tm_tmp);
   snprintf(buffer, sizeof(buffer),
            "Shutting down at %02d%02d%02d %2d:%02d:%02d\n",
@@ -589,12 +704,20 @@ static int binlog_backup_plugin_deinit(void *p) {
            tm_tmp.tm_hour, tm_tmp.tm_min, tm_tmp.tm_sec);
   my_write(con->plugin_log_file, (uchar *)buffer, strlen(buffer), MYF(0));
 
-  my_thread_join(&con->binlog_backup_thread, &dummy_retval);
-  my_thread_join(&con->binlog_flush_interval_thread, &dummy_retval);
+  if (&con->binlog_backup_thread.thread != 0) {
+    my_thread_cancel(&con->binlog_backup_thread);
+    my_thread_join(&con->binlog_backup_thread, &dummy_retval);
+  }
+  if (&con->binlog_flush_interval_thread.thread != 0) {
+    my_thread_cancel(&con->binlog_flush_interval_thread);
+    my_thread_join(&con->binlog_flush_interval_thread, &dummy_retval);
+  }
 
   my_close(con->plugin_log_file, MYF(0));
   my_close(con->backup_state_file, MYF(0));
 
+
+  delete_dynamic(&protocal_cb_result);
   delete con->rfbpt;
 
   my_free(con);
@@ -603,11 +726,9 @@ static int binlog_backup_plugin_deinit(void *p) {
 }
 
 struct st_mysql_daemon binlog_backup_plugin = {MYSQL_DAEMON_INTERFACE_VERSION};
-
 /*
   Plugin library descriptor
 */
-
 mysql_declare_plugin(binlog_backup){
     MYSQL_DAEMON_PLUGIN,
     &binlog_backup_plugin,

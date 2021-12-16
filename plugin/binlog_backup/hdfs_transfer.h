@@ -9,7 +9,7 @@ class HdfsFile : public RemoteFileBase {
   typedef int fd_t;
 
 public:
-  HdfsFile();
+  HdfsFile(const char *,const char *);
   ~HdfsFile() override;
 
   /**

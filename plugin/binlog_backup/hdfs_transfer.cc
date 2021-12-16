@@ -7,11 +7,10 @@
 
 using namespace kunlun;
 
-HdfsFile::HdfsFile() {
+HdfsFile::HdfsFile(const char *cluster_id, const char *shard_id)
+    : m_cluster_name_(cluster_id), m_shard_name_(shard_id),
+      m_hdfs_file_ptr_(nullptr) {
   m_remote_fname_ = "";
-  m_hdfs_file_ptr_ = NULL;
-  m_shard_name_ = "shard1";
-  m_cluster_name_ = "cluster1";
 }
 
 HdfsFile::~HdfsFile() {
