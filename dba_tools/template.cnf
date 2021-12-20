@@ -286,6 +286,7 @@ slow_logging_start_point=2
 
 disabled_storage_engines="MyISAM,BLACKHOLE,FEDERATED,ARCHIVE,MEMORY"
 default-table-encryption =off # either off or on is OK, but all nodes must have same value
+#plugin_load_add='group_replication.so;mysql_clone.so;libbinlog_backup.so'
 plugin_load_add='group_replication.so;mysql_clone.so'
 
 # this will be turned off by GR automatically when this instance becomes master in a GR cluster.

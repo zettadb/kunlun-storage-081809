@@ -211,7 +211,7 @@ class MysqlConfig:
                 + "set sql_log_bin=0;delete from mysql.db where Db='test\_%' and Host='%' ;delete from mysql.db where Db='test' and Host='%';flush privileges;"  \
                 + '''CHANGE MASTER TO MASTER_USER='repl', MASTER_PASSWORD='repl_pwd' FOR CHANNEL 'group_replication_recovery';'''   \
                 + start_mgr_sql
-        init_sql3 = " ".join(["insert into kunlun_sysdb.cluster_info (cluster_name,shard_name) values ('",cluster_id,"','",shard_id,"')"])
+        init_sql3 = "".join(["insert into kunlun_sysdb.cluster_info (cluster_name,shard_name) values ('",cluster_id,"','",shard_id,"')"])
         sys_cmd = " ".join([cmd0, install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-p'+"'"+root_init_password+"'", '-e', '"' + change_pwd_sql + init_sql + '"', '; exit 0'])
 
         add_proc_cmd = " ".join([cmd0, install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-proot <' , install_path+'/dba_tools/seq_reserve_vals.sql' ])
@@ -230,12 +230,12 @@ class MysqlConfig:
             ret = os.system(add_proc_sysdb)
             if ret != 0:
                 raise Exception("Fail to execute command:" + add_proc_sysdb)
+            ret = os.system(initcmd3)
+            if ret != 0:
+                raise Exception("Fail to execute command:" + initcmd3)
         ret = os.system(initcmd2)
         if ret != 0:
             raise Exception("Fail to execute command:" + initcmd2)
-        ret = os.system(initcmd3)
-        if ret != 0:
-            raise Exception("Fail to execute command:" + initcmd3)
         if ha_mode == 'mgr':
             os.system("sed -e 's/#super_read_only=OFF/super_read_only=ON/' -i " + cnf_file_path)
 #        uuid_cmd_str = install_path + "/bin/mysql  --silent --skip-column-names --connect-expired-password -S" + data_path + '/prod/mysql.sock -uroot -proot -e "set @uuid_str=uuid(); set global group_replication_group_name=@uuid_str; ' + start_mgr_sql+ ' select @uuid_str;"\n'

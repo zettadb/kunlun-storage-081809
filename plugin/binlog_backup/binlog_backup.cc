@@ -117,6 +117,8 @@ static std::string log_place_holder = "";
 enum REMOTE_STORAGE_TYPE { HDFS = 0, ANONYMOUS };
 static const char *cluster_id = nullptr;
 static const char *shard_id = nullptr;
+static char *member_state = nullptr;
+static char *member_role = nullptr;
 
 struct mysql_binlog_backup_context {
   my_thread_handle binlog_backup_thread;
@@ -141,21 +143,21 @@ static int sql_field_metadata(void *, struct st_send_field *,
                               const CHARSET_INFO *) {
   return false;
 };
-static int sql_end_result_metadata(void *, uint, uint) { return false; };
-static int sql_end_row(void *) { return false; };
-static void sql_abort_row(void *) { DBUG_TRACE; };
-static ulong sql_get_client_capabilities(void *) { return 0; };
-static int sql_get_null(void *) { return false; };
-static int sql_get_integer(void *, longlong) { return false; };
-static int sql_get_longlong(void *, longlong, uint) { return false; };
-static int sql_get_decimal(void *, const decimal_t *) { return false; };
-static int sql_get_double(void *, double, uint32) { return false; };
-static int sql_get_date(void *, const MYSQL_TIME *) { return false; };
-static int sql_get_time(void *, const MYSQL_TIME *, uint) { return false; };
-static int sql_get_datetime(void *, const MYSQL_TIME *, uint) { return false; };
+static int sql_end_result_metadata(void *, uint, uint) { return false; }
+static int sql_end_row(void *) { return false; }
+static void sql_abort_row(void *) { DBUG_TRACE; }
+static ulong sql_get_client_capabilities(void *) { return 0; }
+static int sql_get_null(void *) { return false; }
+static int sql_get_integer(void *, longlong) { return false; }
+static int sql_get_longlong(void *, longlong, uint) { return false; }
+static int sql_get_decimal(void *, const decimal_t *) { return false; }
+static int sql_get_double(void *, double, uint32) { return false; }
+static int sql_get_date(void *, const MYSQL_TIME *) { return false; }
+static int sql_get_time(void *, const MYSQL_TIME *, uint) { return false; }
+static int sql_get_datetime(void *, const MYSQL_TIME *, uint) { return false; }
 static void sql_handle_ok(void *, uint, uint, ulonglong, ulonglong,
                           const char *const){};
-static void sql_shutdown(void *, int){};
+static void sql_shutdown(void *, int){}
 
 static int sql_handle_store_string(void *p, const char *const value,
                                    size_t length, const CHARSET_INFO *const) {
@@ -164,10 +166,11 @@ static int sql_handle_store_string(void *p, const char *const value,
       (struct mysql_binlog_backup_context *)p;
 
   char buffer[RUNTIME_STRING_BUFFER];
-  InfoPluginLog(ctx->plugin_log_file, "get protocal str %s", value);
+  InfoPluginLog(ctx->plugin_log_file,
+                "get protocal str,lenght: %lu,content: %s\n", length, value);
   char *v = (char *)malloc(length + 1);
   bzero((void *)v, length + 1);
-  strcpy(v, value);
+  strncpy(v, value, length);
   insert_dynamic(&protocal_cb_result, (void *)(&v));
   return 0;
 }
@@ -383,19 +386,24 @@ static void *mysql_binlog_flush_interval(void *p) {
   /* push the clean handler */
   pthread_cleanup_push(binlog_flush_thread_clean_func, (void *)session);
 
-  if (srv_session_init_thread(con->p)) {
-    ErrorPluginLog(con->plugin_log_file, "init srv session faildi%s.",
+  while (srv_session_init_thread(con->p)) {
+    ErrorPluginLog(con->plugin_log_file,
+                   "[binlog_flush_interval] init srv session faildi%s\n",
                    log_place_holder.c_str());
-    return 0;
+    WAIT_CONTINUE(3);
   }
   /* Open session: Must pass */
-  InfoPluginLog(con->plugin_log_file, "[thd_srv_session_open]%s\n",
+  InfoPluginLog(con->plugin_log_file,
+                "[binlog_flush_interval] [thd_srv_session_open]%s\n",
                 log_place_holder.c_str());
   session = srv_session_open(NULL, NULL);
-  if (!session) {
-    ErrorPluginLog(con->plugin_log_file, "srv_session_open failed%s\n",
-                   log_place_holder.c_str());
-    return 0;
+  while (!session) {
+    ErrorPluginLog(
+        con->plugin_log_file,
+        "[binlog_flush_interval] srv_session_open failed,will retry%s\n",
+        log_place_holder.c_str());
+    session = srv_session_open(NULL, NULL);
+    WAIT_CONTINUE(3);
   }
   InfoPluginLog(con->plugin_log_file, "srv_session_open successfully%s\n",
                 log_place_holder.c_str());
@@ -421,12 +429,86 @@ static void *mysql_binlog_flush_interval(void *p) {
   return 0;
 }
 
-static bool get_cluster_shard_name(struct mysql_binlog_backup_context *con) {
+static bool is_mgr_primary(struct mysql_binlog_backup_context *con) {
 
-  DBUG_TRACE;
   char buffer[RUNTIME_STRING_BUFFER];
   MYSQL_SESSION session = nullptr;
   COM_DATA cmd;
+  if (srv_session_init_thread(con->p)) {
+    ErrorPluginLog(con->plugin_log_file,
+                   "[ROLE STATE] init srv session faildi%s.",
+                   log_place_holder.c_str());
+    return false;
+  }
+  /* Open session: Must pass */
+  InfoPluginLog(con->plugin_log_file, "[ROLE STATE] [thd_srv_session_open]%s\n",
+                log_place_holder.c_str());
+  session = srv_session_open(NULL, NULL);
+  if (!session) {
+    ErrorPluginLog(con->plugin_log_file,
+                   "[ROLE STATE] srv_session_open failed%s\n",
+                   log_place_holder.c_str());
+    return false;
+  }
+  InfoPluginLog(con->plugin_log_file,
+                "[ROLE STATE] srv_session_open successfully%s\n",
+                log_place_holder.c_str());
+  switch_user(session);
+
+  char stmt_buffer[4096] = {'\0'};
+  memset(stmt_buffer, 0, sizeof(stmt_buffer));
+  sprintf(stmt_buffer,
+          "select member_state,member_role from "
+          "performance_schema.replication_group_members where member_host = "
+          "'%s' and member_port = '%u'",
+          my_bind_addr_str, mysqld_port);
+  set_query_in_com_data(&cmd, stmt_buffer);
+  run_cmd(session, COM_QUERY, &cmd, nullptr, con);
+
+  bool value_got = protocal_cb_result.elements >= 2 ? true : false;
+  /* assign the result to the var*/
+  if(!value_got){
+    InfoPluginLog(con->plugin_log_file,
+                  "[ROLE STATE] Get nothing from the systable about the mgr role info%s\n",
+                  log_place_holder.c_str());
+    return false;
+  }
+  member_role = *((char **)pop_dynamic(&protocal_cb_result));
+  member_state = *((char **)pop_dynamic(&protocal_cb_result));
+
+  if (!(strcmp(member_role, "PRIMARY") == 0 &&
+        strcmp(member_state, "ONLINE") == 0)) {
+    InfoPluginLog(con->plugin_log_file,
+                  "[ROLE STATE] Current node role: %s,state :%s, which is not "
+                  "the primary node,skip and continue check\n",
+                  member_role, member_state);
+    free(member_role);
+    free(member_state);
+    return false;
+  }
+
+  /* Close session: Must pass */
+  srv_session_close(session);
+  srv_session_deinit_thread();
+  InfoPluginLog(con->plugin_log_file,
+                "[ROLE STATE] Current node role: %s,state :%s, which is the "
+                "online primary node, start backup binlog stream\n",
+                member_role, member_state);
+  free(member_role);
+  free(member_state);
+  return true;
+}
+
+static bool get_cluster_shard_name(struct mysql_binlog_backup_context *con) {
+
+  char buffer[RUNTIME_STRING_BUFFER];
+  MYSQL_SESSION session = nullptr;
+  COM_DATA cmd;
+  if (srv_session_init_thread(con->p)) {
+    ErrorPluginLog(con->plugin_log_file, "init srv session faildi%s\n",
+                   log_place_holder.c_str());
+    return false;
+  }
   /* Open session: Must pass */
   InfoPluginLog(con->plugin_log_file, "[thd_srv_session_open]%s\n",
                 log_place_holder.c_str());
@@ -452,12 +534,20 @@ static bool get_cluster_shard_name(struct mysql_binlog_backup_context *con) {
   set_query_in_com_data(&cmd, stmt_buffer);
   run_cmd(session, COM_QUERY, &cmd, nullptr, con);
 
+  bool value_got = protocal_cb_result.elements >= 2 ? true : false;
+  if(!value_got){
+    InfoPluginLog(con->plugin_log_file,
+                  "Get nothing from the systable about the cluster shard id info%s\n",
+                  log_place_holder.c_str());
+    return false;
+  }
   /* assign the result to the var*/
   shard_id = *((char **)pop_dynamic(&protocal_cb_result));
   cluster_id = *((char **)pop_dynamic(&protocal_cb_result));
 
   /* Close session: Must pass */
   srv_session_close(session);
+  srv_session_deinit_thread();
   return true;
 }
 
@@ -466,6 +556,15 @@ static void *mysql_binlog_backup(void *p) {
   struct mysql_binlog_backup_context *con =
       (struct mysql_binlog_backup_context *)p;
   char buffer[RUNTIME_STRING_BUFFER];
+
+  /* init the cluster shard id info */
+  while (!get_cluster_shard_name(con)) {
+    ErrorPluginLog(con->plugin_log_file,
+                   "Invalid Kunlun Cluster/Shard Name, Please check related "
+                   "system table%s\n",
+                   log_place_holder.c_str());
+    WAIT_CONTINUE(3);
+  }
 
   /* init the file transfer handler */
   RemoteFileBase *rfbpt = get_backup_instance(con->storage_type);
@@ -476,6 +575,9 @@ static void *mysql_binlog_backup(void *p) {
   File fd;
 
   for (;;) {
+    if (!is_mgr_primary(con)) {
+      WAIT_CONTINUE(3);
+    }
     /* get binlog file name */
     if (binlog_rotated) {
       std::string binlog_fn_next = get_next_binlog_to_backup();
@@ -632,16 +734,9 @@ static int binlog_backup_plugin_init(void *p) {
   snprintf(binlog_machine_info, sizeof(binlog_machine_info), "I%s_P%u",
            bind_address.c_str(), mysqld_port);
 
-  /* init cluster shard info */
-
+  /* init protocal callback buffer */
   my_init_dynamic_array(&protocal_cb_result, PSI_NOT_INSTRUMENTED,
                         sizeof(char **), NULL, 4, 2);
-  if (!get_cluster_shard_name(con)) {
-    my_error(
-        ER_INTERNAL_ERROR, MYF(0),
-        "Invalid Kunlun Cluster/Shard Name, Please check related system table");
-    return 1;
-  }
 
   /*
     No threads exist at this point in time, so this is thread safe.
@@ -702,6 +797,9 @@ static int binlog_backup_plugin_deinit(void *p) {
            "Shutting down at %02d%02d%02d %2d:%02d:%02d\n",
            tm_tmp.tm_year % 100, tm_tmp.tm_mon + 1, tm_tmp.tm_mday,
            tm_tmp.tm_hour, tm_tmp.tm_min, tm_tmp.tm_sec);
+  if (!con) {
+    return 0;
+  }
   my_write(con->plugin_log_file, (uchar *)buffer, strlen(buffer), MYF(0));
 
   if (&con->binlog_backup_thread.thread != 0) {
@@ -715,7 +813,6 @@ static int binlog_backup_plugin_deinit(void *p) {
 
   my_close(con->plugin_log_file, MYF(0));
   my_close(con->backup_state_file, MYF(0));
-
 
   delete_dynamic(&protocal_cb_result);
   delete con->rfbpt;
