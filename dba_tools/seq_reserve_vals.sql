@@ -5,7 +5,7 @@ CREATE PROCEDURE mysql.seq_reserve_vals(dbname varchar(64), seqname varchar(64),
     SQL SECURITY INVOKER
 cur_proc: BEGIN
     DECLARE step INT DEFAULT 0;
-    DECLARE curval BIGINT;
+    DECLARE curval BIGINT DEFAULT NULL;
     DECLARE start_value BIGINT DEFAULT 0;
     DECLARE max_value BIGINT DEFAULT 0;
     DECLARE min_value BIGINT DEFAULT 0;
@@ -33,7 +33,7 @@ cur_proc: BEGIN
     EXECUTE stmt1 USING @dbname, @seqname;
 	DEALLOCATE PREPARE stmt1;
 
-	if @step = 0 then
+	if @step = 0 or @step IS NULL then
 		set errcode = -1;
 		set newval = NULL;
 		leave cur_proc;
