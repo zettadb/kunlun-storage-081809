@@ -348,4 +348,5 @@ ADD_SUBDIRECTORY(group_replication)
 ADD_SUBDIRECTORY(libmysqlgcs)
 ADD_SUBDIRECTORY(keyring_vault)
 ADD_SUBDIRECTORY(temptable)
+ADD_SUBDIRECTORY(global_consistent)
 

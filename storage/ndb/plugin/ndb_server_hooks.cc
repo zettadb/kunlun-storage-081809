@@ -86,7 +86,9 @@ bool Ndb_server_hooks::register_applier_start(hook_t *hook_func) {
       NULL,                        // after_read_event
       NULL,                        // after_queue_event
       NULL,                        // after_reset
-      NULL                         // applier_log_event
+      NULL,                         // applier_log_event
+      NULL
+
   };
 
   // Install replication observer to be called when applier thread start

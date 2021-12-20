@@ -139,8 +139,8 @@ class MysqlConfig:
                 #"place_holder_extra_port": str(int(server_port)+10000), mysql8.0 doesn't have 'extra_port' var.
                 "base_dir": install_path,
                 "place_holder_server_id": str(server_id),
-                "place_holder_shard_id": str(shard_id),
-                "place_holder_cluster_id": str(cluster_id),
+                "place_holder_shard_id": "0",
+                "place_holder_cluster_id": "0",
                 }
 
         is_master, server_port, data_path, log_path, log_arch, log_dir, user, dirs = make_mgr_args(
@@ -211,10 +211,13 @@ class MysqlConfig:
                 + "set sql_log_bin=0;delete from mysql.db where Db='test\_%' and Host='%' ;delete from mysql.db where Db='test' and Host='%';flush privileges;"  \
                 + '''CHANGE MASTER TO MASTER_USER='repl', MASTER_PASSWORD='repl_pwd' FOR CHANNEL 'group_replication_recovery';'''   \
                 + start_mgr_sql
+        init_sql3 = " ".join(["insert into kunlun_sysdb.cluster_info (cluster_name,shard_name) values ('",cluster_id,"','",shard_id,"')"])
         sys_cmd = " ".join([cmd0, install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-p'+"'"+root_init_password+"'", '-e', '"' + change_pwd_sql + init_sql + '"', '; exit 0'])
 
         add_proc_cmd = " ".join([cmd0, install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-proot <' , install_path+'/dba_tools/seq_reserve_vals.sql' ])
+        add_proc_sysdb = " ".join([cmd0, install_path + '/bin/mysql', '--connect-expired-password', '-S' + data_path + '/prod/mysql.sock', '-uroot', '-proot <' , install_path+'/dba_tools/sys_db_table.sql' ])
 	initcmd2 = " ".join([cmd0, install_path + "/bin/mysql", "--connect-expired-password", '-S' + data_path + '/prod/mysql.sock', '-uroot -proot', '-e', '"' + init_sql2 + '"\n'])
+	initcmd3 = " ".join([cmd0, install_path + "/bin/mysql", "--connect-expired-password", '-S' + data_path + '/prod/mysql.sock', '-uroot -proot', '-e', '"' + init_sql3 + '"\n'])
         for idx in xrange(30):
             result = subprocess.check_output(sys_cmd, shell = True, stderr=subprocess.STDOUT)
             if result.find('version') >= 0:
@@ -224,9 +227,15 @@ class MysqlConfig:
             ret = os.system(add_proc_cmd)
             if ret != 0:
                 raise Exception("Fail to execute command:" + add_proc_cmd)
+            ret = os.system(add_proc_sysdb)
+            if ret != 0:
+                raise Exception("Fail to execute command:" + add_proc_sysdb)
         ret = os.system(initcmd2)
         if ret != 0:
             raise Exception("Fail to execute command:" + initcmd2)
+        ret = os.system(initcmd3)
+        if ret != 0:
+            raise Exception("Fail to execute command:" + initcmd3)
         if ha_mode == 'mgr':
             os.system("sed -e 's/#super_read_only=OFF/super_read_only=ON/' -i " + cnf_file_path)
 #        uuid_cmd_str = install_path + "/bin/mysql  --silent --skip-column-names --connect-expired-password -S" + data_path + '/prod/mysql.sock -uroot -proot -e "set @uuid_str=uuid(); set global group_replication_group_name=@uuid_str; ' + start_mgr_sql+ ' select @uuid_str;"\n'
@@ -243,16 +252,16 @@ class MysqlConfig:
         os.system("echo \"" + str(server_port) + "==>" + cnf_file_path + "\" >> " + conf_list_file)
 
 def print_usage():
-    print 'Usage: install-mysql.py --config /path/of/mgr/config/file --target_node_index idx [--dbcfg /db/config/template/path/template.cnf] [--user db_init_user] [--cluster_id ID] [--shard_id N] [--server_id N] [--ha_mode mgr|no_rep|rbr]'
+    print 'Usage: install-mysql.py --config /path/of/mgr/config/file --target_node_index idx --cluster_id ID --shard_id N [--dbcfg /db/config/template/path/template.cnf] [--user db_init_user] [--server_id N] [--ha_mode mgr|no_rep|rbr]'
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Install the storage node.')
     parser.add_argument('--config', type=str, help="The config path", required=True)
     parser.add_argument('--target_node_index', type=int, help = "target node", required=True)
+    parser.add_argument('--cluster_id', type=str, help = "the id for the cluster", required=True)
+    parser.add_argument('--shard_id', type=str, help = "the id for the shard",required=True)
     parser.add_argument('--dbcfg', type=str, help = "target node", default='./template.cnf')
     parser.add_argument('--user', type=str, help = "user_used_to_initialize", default=pwd.getpwuid(os.getuid()).pw_name)
-    parser.add_argument('--cluster_id', type=int, help = "the id for the cluster", default=0)
-    parser.add_argument('--shard_id', type=int, help = "the id for the shard",default=0)
     parser.add_argument('--server_id', type=int, help = "the id for the server", default=random.randint(1,65535))
     parser.add_argument('--ha_mode', type=str, default='mgr', choices=['mgr','no_rep', 'rbr'])
     args = parser.parse_args()

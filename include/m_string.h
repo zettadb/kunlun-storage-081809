@@ -351,7 +351,7 @@ static inline void human_readable_num_bytes(char *buf, int buf_len,
   for (i = 0; dbl_val > 1024 && i < sizeof(size) - 1; i++) dbl_val /= 1024;
   const char mult = size[i];
   // 18446744073709551615 Yottabytes should be enough for most ...
-  if (dbl_val > ULLONG_MAX)
+  if ((unsigned long long)dbl_val > ULLONG_MAX)
     snprintf(buf, buf_len, "+INF");
   else
     snprintf(buf, buf_len, "%llu%c", (unsigned long long)dbl_val, mult);

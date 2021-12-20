@@ -45,7 +45,7 @@
 #include "sql/sql_plugin.h"  // st_plugin_int
 #include "sql/mysqld.h" // mysqld_port, my_bind_addr_str
 
-#define ZETTA_SYS_DBNAME "zetta_sysdb"
+#define KUNLUN_SYS_DBNAME "kunlun_sysdb"
 
 #define STRING_BUFFER_SIZE 1024
 #define LARGE_STRING_BUFFER_SIZE 1024
@@ -109,7 +109,7 @@ struct heartbeat_context {
 static void switch_user(MYSQL_SESSION session) {
   MYSQL_SECURITY_CONTEXT sc;
   thd_get_security_context(srv_session_info_get_thd(session), &sc);
-  security_context_lookup(sc, "root", "127.0.0.1", "localhost", ZETTA_SYS_DBNAME);
+  security_context_lookup(sc, "root", "127.0.0.1", "localhost", KUNLUN_SYS_DBNAME);
 }
 
 static void print_cmd(enum_server_command cmd, COM_DATA *data) {
@@ -186,15 +186,15 @@ static void *init_heartbeat_table(void *p MY_ATTRIBUTE((unused))) {
 
   // init zetta sysdb
   WRITE_STR("CREATE DATABASE IF_NOT_EXISTS\n");
-  sprintf(stmt_buffer,"CREATE DATABASE IF NOT EXISTS " ZETTA_SYS_DBNAME);
+  sprintf(stmt_buffer,"CREATE DATABASE IF NOT EXISTS " KUNLUN_SYS_DBNAME);
   set_query_in_com_data(&cmd, stmt_buffer);
   run_cmd(session, COM_QUERY, &cmd, nullptr, p);
   memset(stmt_buffer,0,sizeof(stmt_buffer));
 
   // change databases
   WRITE_STR("CHANGE DATABASE\n");
-  cmd.com_init_db.db_name = ZETTA_SYS_DBNAME;
-  cmd.com_init_db.length = strlen(ZETTA_SYS_DBNAME);
+  cmd.com_init_db.db_name = KUNLUN_SYS_DBNAME;
+  cmd.com_init_db.length = strlen(KUNLUN_SYS_DBNAME);
   run_cmd(session, COM_INIT_DB, &cmd, nullptr, p);
 
   // init zetta heartbeat table 
@@ -272,8 +272,8 @@ static void *mysql_heartbeat(void *p) {
 
   // change databases
   WRITE_STR("CHANGE DATABASE\n");
-  cmd.com_init_db.db_name = ZETTA_SYS_DBNAME;
-  cmd.com_init_db.length = strlen(ZETTA_SYS_DBNAME);
+  cmd.com_init_db.db_name = KUNLUN_SYS_DBNAME;
+  cmd.com_init_db.length = strlen(KUNLUN_SYS_DBNAME);
   run_cmd(session, COM_INIT_DB, &cmd, nullptr, p);
 
   while (1) {

@@ -261,6 +261,7 @@ class Binlog_relay_IO_delegate : public Delegate {
                         ulong event_len, bool synced);
   int after_reset_slave(THD *thd, Master_info *mi);
   int applier_log_event(THD *thd, int &out);
+  int applier_before_dispatch_event(void* param);
 
  private:
   void init_param(Binlog_relay_IO_param *param, Master_info *mi);
