@@ -2,7 +2,6 @@
 # This source code is licensed under Apache 2.0 License,
 # combined with Common Clause Condition 1.0, as detailed in the NOTICE file.
 
-import psycopg2
 import mysql.connector
 import argparse
 import json
@@ -113,40 +112,9 @@ def add_shards_to_cluster(mysql_conn_params, cluster_name, config_path, install_
         master_cursor.close()
         master_conn.close()
 
-    add_new_shards_to_all_computing_nodes(cluster_id, meta_conn, jscfg)
     meta_conn.close()
     jsconf.close()
     return nshards
-
-def add_new_shards_to_all_computing_nodes(cluster_id, meta_conn, jscfg):
-
-    meta_cursor0 = meta_conn.cursor(buffered=True, dictionary=True)
-    meta_cursor0.execute("select * from comp_nodes where db_cluster_id={}".format(cluster_id))
-
-    for row in meta_cursor0:
-        conn = psycopg2.connect(host=row['hostaddr'], port=row['port'], user=row['user_name'], database='postgres', password=row['passwd'])
-        cur = conn.cursor()
-        nretries = 0
-        while nretries < 10:
-            try:
-                cur.execute("start transaction")
-                for shardcfg in jscfg:
-                    cur.execute("insert into pg_shard (name, id, num_nodes, master_node_id, space_volumn, num_tablets, db_cluster_id, when_created) values(%s, %s, %s, %s, %s,%s,%s, now())",
-                            (shardcfg['shard_name'], shardcfg['shard_id'], shardcfg['num_nodes'], shardcfg['shard_nodes'][0]['shard_node_id'], 0, 0, cluster_id))
-                    for v in shardcfg['shard_nodes']:
-                        cur.execute("insert into pg_shard_node values(%s, %s, %s, %s, %s, %s, %s, %s, now())",
-                                (v['shard_node_id'], v['port'], shardcfg['shard_id'], 0, 0, v['user'], v['ip'], v['password']))
-                cur.execute("commit")
-                break
-            except psycopg2.Error as pgerr:
-                nretries = nretries + 1
-                print "Got error: " + str(pgerr) + ". Shard config: {" + str(shardcfg) + "}. Will retry in 2 seconds, " + str(nretries) +" of 10 retries."
-                cur.execute("rollback")
-                time.sleep(2)
-
-        cur.close()
-        conn.close()
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Add one or more shard(s) to the cluster.')

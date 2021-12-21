@@ -2,20 +2,18 @@
 # This source code is licensed under Apache 2.0 License,
 # combined with Common Clause Condition 1.0, as detailed in the NOTICE file.
 
-# create one cluster, using shard config file and computing node config file.
-# metadata in meta-cluster and all computing nodes are updated and well maintained.
+# create one cluster, using shard config file 
+# metadata in meta-cluster are updated and well maintained.
 
 import mysql.connector
 import argparse
 import json
-import add_comp_nodes
 import add_shards
 import common
 from distutils.util import strtobool
 
 parser = argparse.ArgumentParser(description='Create one cluster')
 parser.add_argument('--shards_config', type=str, help="shard config file path")
-parser.add_argument('--comps_config', type=str, help="computing nodes config file path")
 parser.add_argument('--meta_config', type=str, help="meta-shard config file path")
 parser.add_argument('--cluster_name', type=str)
 parser.add_argument('--cluster_owner', type=str); # owner name, e.g. department/group name, or employee name
@@ -54,10 +52,6 @@ meta_cursor0.execute("create table commit_log_" + args.cluster_name + " like com
 meta_cursor.close()
 meta_cursor0.close()
 meta_conn.close()
-
-print "Step 4. Adding computing nodes into cluster " + args.cluster_name
-install_ids=[-1] # add all computing nodes
-add_comp_nodes.add_computing_nodes(mysql_conn_params, args, args.comps_config, install_ids)
 
 print "Step 5. Adding storage shards into cluster " + args.cluster_name
 install_names=[''] # add all shards
