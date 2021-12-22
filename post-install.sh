@@ -26,6 +26,7 @@ cp -f libjemalloc.so.3.6.0  $1/share_lib
 cp -f bootmysql.sh imysql.sh mgr_config.json seq_reserve_vals.sql stopmysql.sh template-small.cnf  $1/dba_tools
 cp -f install-mysql.py monitormysql.sh  startmysql.sh template.cnf  $1/dba_tools
 cp -f add_shards.py bootstrap.py common.py create_cluster.py meta_inuse.sql $1/dba_tools
+cp -f sys_db_table.sql $1/dba_tools
 
 #make sure all scripts are executable
 cd $1/dba_tools
