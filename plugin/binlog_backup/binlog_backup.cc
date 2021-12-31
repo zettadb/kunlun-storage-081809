@@ -142,7 +142,7 @@ static void sql_handle_error(void *, uint, const char *const,
 static int sql_field_metadata(void *, struct st_send_field *,
                               const CHARSET_INFO *) {
   return false;
-};
+}
 static int sql_end_result_metadata(void *, uint, uint) { return false; }
 static int sql_end_row(void *) { return false; }
 static void sql_abort_row(void *) { DBUG_TRACE; }
@@ -156,7 +156,7 @@ static int sql_get_date(void *, const MYSQL_TIME *) { return false; }
 static int sql_get_time(void *, const MYSQL_TIME *, uint) { return false; }
 static int sql_get_datetime(void *, const MYSQL_TIME *, uint) { return false; }
 static void sql_handle_ok(void *, uint, uint, ulonglong, ulonglong,
-                          const char *const){};
+                          const char *const){}
 static void sql_shutdown(void *, int){}
 
 static int sql_handle_store_string(void *p, const char *const value,
@@ -438,6 +438,8 @@ static bool is_mgr_primary(struct mysql_binlog_backup_context *con) {
     ErrorPluginLog(con->plugin_log_file,
                    "[ROLE STATE] init srv session faildi%s.",
                    log_place_holder.c_str());
+    srv_session_close(session);
+    srv_session_deinit_thread();
     return false;
   }
   /* Open session: Must pass */
@@ -448,6 +450,8 @@ static bool is_mgr_primary(struct mysql_binlog_backup_context *con) {
     ErrorPluginLog(con->plugin_log_file,
                    "[ROLE STATE] srv_session_open failed%s\n",
                    log_place_holder.c_str());
+    srv_session_close(session);
+    srv_session_deinit_thread();
     return false;
   }
   InfoPluginLog(con->plugin_log_file,
@@ -471,6 +475,8 @@ static bool is_mgr_primary(struct mysql_binlog_backup_context *con) {
     InfoPluginLog(con->plugin_log_file,
                   "[ROLE STATE] Get nothing from the systable about the mgr role info%s\n",
                   log_place_holder.c_str());
+    srv_session_close(session);
+    srv_session_deinit_thread();
     return false;
   }
   member_role = *((char **)pop_dynamic(&protocal_cb_result));
@@ -484,6 +490,8 @@ static bool is_mgr_primary(struct mysql_binlog_backup_context *con) {
                   member_role, member_state);
     free(member_role);
     free(member_state);
+    srv_session_close(session);
+    srv_session_deinit_thread();
     return false;
   }
 
