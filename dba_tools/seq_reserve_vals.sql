@@ -1,6 +1,6 @@
 delimiter ;;
 -- errcode: >0: success, the NO. of seq values fetched; -1: sequence not found; -2: sequence value consumed; -3: argument error
-CREATE PROCEDURE mysql.seq_reserve_vals(dbname varchar(64), seqname varchar(64), nvals int , OUT newstart bigint, OUT newval bigint, OUT errcode int)
+CREATE PROCEDURE kunlun_sysdb.seq_reserve_vals(dbname varchar(64), seqname varchar(64), nvals int , OUT newstart bigint, OUT newval bigint, OUT errcode int)
     MODIFIES SQL DATA
     SQL SECURITY INVOKER
 cur_proc: BEGIN
@@ -27,7 +27,7 @@ cur_proc: BEGIN
 	SET @ngot = 1;
 	set newstart = NULL;
 	-- curval is the max alloced value
-    SET @sql1 = 'select curval, start, step, max_value, min_value, do_cycle from mysql.sequences where db=? and name=? for update into @curval, @start_value, @step, @max_value, @min_value, @do_cycle';
+    SET @sql1 = 'select curval, start, step, max_value, min_value, do_cycle from kunlun_sysdb.sequences where db=? and name=? for update into @curval, @start_value, @step, @max_value, @min_value, @do_cycle';
     PREPARE stmt1 FROM @sql1;
 
     EXECUTE stmt1 USING @dbname, @seqname;
@@ -112,7 +112,7 @@ cur_proc: BEGIN
 	END IF;
 
 	if newval IS NOT NULL then
-		set @sql2 = 'update mysql.sequences set curval = ? where db=? and name=?';
+		set @sql2 = 'update kunlun_sysdb.sequences set curval = ? where db=? and name=?';
 		PREPARE stmt2 FROM @sql2;
 		set @newval = newval;
     	EXECUTE stmt2 USING @newval, @dbname, @seqname;

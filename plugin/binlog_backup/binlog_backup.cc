@@ -324,7 +324,6 @@ static void switch_user(MYSQL_SESSION session) {
   thd_get_security_context(srv_session_info_get_thd(session), &sc);
   security_context_lookup(sc, "root", "127.0.0.1", "localhost", "kunlun_sysdb");
 }
-
 static void
 run_cmd(MYSQL_SESSION session, enum_server_command cmd, COM_DATA *data,
         struct mysql_binlog_backup_context *ctx MY_ATTRIBUTE((unused)),
