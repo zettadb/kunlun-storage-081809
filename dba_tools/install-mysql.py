@@ -224,15 +224,15 @@ class MysqlConfig:
                 break
             os.system('sleep 5\n')
         if ha_mode == 'no_rep' or is_master:
-            ret = os.system(add_proc_cmd)
-            if ret != 0:
-                raise Exception("Fail to execute command:" + add_proc_cmd)
             ret = os.system(add_proc_sysdb)
             if ret != 0:
                 raise Exception("Fail to execute command:" + add_proc_sysdb)
             ret = os.system(initcmd3)
             if ret != 0:
                 raise Exception("Fail to execute command:" + initcmd3)
+            ret = os.system(add_proc_cmd)
+            if ret != 0:
+                raise Exception("Fail to execute command:" + add_proc_cmd)
         ret = os.system(initcmd2)
         if ret != 0:
             raise Exception("Fail to execute command:" + initcmd2)

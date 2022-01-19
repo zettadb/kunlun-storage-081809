@@ -119,4 +119,41 @@ cur_proc: BEGIN
 
 		DEALLOCATE PREPARE stmt2;
 	end if;
-END;
+END;;
+
+-- usage:
+--  call kunlun_sysdb.reserve_seq(
+--		CONVERT('[{"seqrelid":1171460, "dbname": "abc_$$_public", "seqname":"s4", "nvals":10}]', JSON),
+--		@res);
+--  SELECT @res;
+CREATE PROCEDURE kunlun_sysdb.reserve_seq(param JSON, OUT result JSON)
+BEGIN
+    DECLARE len INT;
+    DECLARE i INT DEFAULT 0;
+    DECLARE cur JSON;
+    DECLARE seqrelid BIGINT;
+    DECLARE dbname VARCHAR(64);
+    DECLARE seqname VARCHAR(64);
+    DECLARE nvals INT;
+    DECLARE newstart BIGINT;
+    DECLARE newval BIGINT;
+    DECLARE retcode INT;
+
+    SET len = JSON_LENGTH(param);
+    SET result = JSON_ARRAY();
+    WHILE i<len DO
+        SET cur = JSON_EXTRACT(param, concat('$[',i,']'));
+        SET seqrelid = JSON_EXTRACT(cur, "$.seqrelid");
+        SET dbname = JSON_UNQUOTE(JSON_EXTRACT(cur, "$.dbname"));
+        SET seqname = JSON_UNQUOTE(JSON_EXTRACT(cur, "$.seqname"));
+        SET nvals = JSON_UNQUOTE(JSON_EXTRACT(cur, "$.nvals"));
+        SET newstart = 0, newval=0, retcode=0;
+        CALL kunlun_sysdb.seq_reserve_vals(dbname, seqname, nvals, newstart, newval, retcode);
+        SET result = JSON_ARRAY_APPEND(result, '$', JSON_OBJECT("seqrelid", seqrelid,
+                "newstart", newstart,
+                "newval", newval,
+                "retcode", retcode)
+        );
+        SET i = i + 1;
+    END WHILE;
+END;;
