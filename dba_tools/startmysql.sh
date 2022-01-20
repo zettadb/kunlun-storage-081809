@@ -41,7 +41,7 @@ fi
 
 
 
-if [ $shelluser != $mysqluser ];then
+if [ "$shelluser" != "$mysqluser" ];then
 	su $mysqluser -c "./bootmysql.sh $base_dir ${etcfile} ${mysqluser}"
 else
 	./bootmysql.sh $base_dir ${etcfile} ${mysqluser}
