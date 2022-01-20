@@ -50,6 +50,7 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, ha_mode, db
     innodb_buffer_pool_size = 0
     server_data_prefix = ''
     server_log_prefix = ''
+    server_innolog_prefix = ''
     db_inst_user = ''
     log_arch = ''
 
@@ -75,7 +76,7 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, ha_mode, db
             server_log_prefix = val['log_dir_path']
             db_inst_user = val.get('user', dbuser)
             if val.has_key('innodb_log_dir_path'):
-                log_arch = val['innodb_log_dir_path']
+                server_innolog_prefix = val['innodb_log_dir_path']
 
         idx = idx + 1
 
@@ -102,11 +103,11 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, ha_mode, db
     log_relay = log_path + "/dblogs/relay"
     log_bin_arg = log_path + "/dblogs/bin"
 
-    dirs=[prod_dir, data_dir, innodb_dir, log_dir, tmp_dir, log_relay, log_bin_arg]
     # seperate binlog/relaylogs from innodb redo logs, store them in two dirs so possibly two disks to do parallel IO.
-    if log_arch == '':
+    if server_innolog_prefix == '':
         log_arch = data_path + "/dblogs/arch"
-        dirs.append(log_arch)
+    else:
+        log_arch = server_innolog_prefix + "/" + str(server_port) + "/arch"
 
     replace_items["place_holder_ip"] = local_ip
     if ha_mode == 'mgr':
@@ -129,6 +130,7 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, ha_mode, db
     replace_items["place_holder_port"] = str(server_port)
     replace_items["place_holder_user"] = db_inst_user
 
+    dirs=[prod_dir, data_dir, innodb_dir, log_dir, tmp_dir, log_relay, log_bin_arg, log_arch]
     return is_master_node, server_port, data_path, log_path, log_arch, log_dir, db_inst_user, dirs
 
 class MysqlConfig:
