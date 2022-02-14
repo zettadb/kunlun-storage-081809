@@ -62,11 +62,14 @@ def make_mgr_args(mgr_config_path, replace_items, target_node_index, ha_mode, db
             seeds = seeds + ','
 
         white_list = white_list + val['ip']
-        seeds = seeds + val['ip'] + ':' + str(val['mgr_port'])
+        addr=val['ip']
+        if addr.find(":") >= 0:
+            addr='['+addr+']'
+        seeds = seeds + addr + ':' + str(val['mgr_port'])
 
         if idx == nodeidx:
             local_ip = val['ip']
-            local_addr = val['ip'] + ':' + str(val['mgr_port'])
+            local_addr = addr + ':' + str(val['mgr_port'])
             mgr_port = val['mgr_port']
             weight = val['election_weight']
             server_port = val['port']
