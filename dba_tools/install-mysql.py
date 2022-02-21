@@ -258,7 +258,7 @@ class MysqlConfig:
         os.system("echo \"" + str(server_port) + "==>" + cnf_file_path + "\" >> " + conf_list_file)
 
 def print_usage():
-    print 'Usage: install-mysql.py --config /path/of/mgr/config/file --target_node_index idx --cluster_id ID --shard_id N [--dbcfg /db/config/template/path/template.cnf] [--user db_init_user] [--server_id N] [--ha_mode mgr|no_rep|rbr]'
+    print 'Usage: install-mysql.py --config /path/of/mgr/config/file --target_node_index idx --cluster_id ID --shard_id N [--dbcfg /db/config/template/path/template.cnf] [--user db_init_user] [--server_id N] [--ha_mode mgr|no_rep]'
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Install the storage node.')
@@ -269,7 +269,7 @@ if __name__ == "__main__":
     parser.add_argument('--dbcfg', type=str, help = "target node", default='./template.cnf')
     parser.add_argument('--user', type=str, help = "user_used_to_initialize", default=pwd.getpwuid(os.getuid()).pw_name)
     parser.add_argument('--server_id', type=int, help = "the id for the server", default=random.randint(1,65535))
-    parser.add_argument('--ha_mode', type=str, default='mgr', choices=['mgr','no_rep', 'rbr'])
+    parser.add_argument('--ha_mode', type=str, default='mgr', choices=['mgr','no_rep'])
     args = parser.parse_args()
     try:
         if not os.path.exists(args.dbcfg):
